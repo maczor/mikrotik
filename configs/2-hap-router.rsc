@@ -1,0 +1,436 @@
+# =============================================================================
+# hAP ax3 — Solej Hotel (router główny)
+# Rola: router LTE + DHCP + DNS + firewall + CAPsMAN + hotspot + VPN
+# RouterOS: 7.21.4+
+#
+# PRZED IMPORTEM:
+#   1. Reset to defaults BEZ default config (System -> Reset Configuration ->
+#      "No Default Configuration").
+#   2. Update firmware do 7.21.4 + RouterBOOT.
+#   3. Wgraj plik hotspot/login.html do Files (drag & drop) PRZED importem
+#      (skrypt do niego się odwołuje).
+#   4. Podmień placeholdery:
+#        __PLACEHOLDER_ADMIN_PASSWORD__       -> hasło admina
+#        __PLACEHOLDER_PRIV_WIFI_PASSWORD__   -> hasło Solej-priv
+#        __PLACEHOLDER_CAMS_WIFI_PASSWORD__   -> hasło Solej-Cams (na zapas)
+#   5. Podłącz laptop do ether5 (access VLAN 20 -> dostaniesz IP 10.20.20.x).
+#   6. WinBox/SSH przez aktualne IP/MAC, otwórz terminal.
+#
+# IMPORT:
+#   /import file-name=2-hap-router.rsc verbose=yes
+#
+# PO IMPORCIE:
+#   - Stracisz chwilowo łączność (włącza się VLAN filtering) — przeloguj.
+#   - Aktywuj VPN: WinBox -> IP -> Cloud -> Back to Home -> zaloguj konto
+#     mikrotik.com -> Enable. Aplikacja na telefon: skanuj QR.
+#   - Sprawdź: /interface print (lista bridge/vlan), /ip address print,
+#     /interface wifi capsman print
+# =============================================================================
+
+:log info "hAP-Solej: start konfiguracji"
+
+# === 1. Identity, czas, hasło ===============================================
+/system identity set name="hap-solej-rtr"
+/system clock set time-zone-name=Europe/Warsaw
+/system note set show-at-login=no note=""
+/user set [find name="admin"] password="__PLACEHOLDER_ADMIN_PASSWORD__"
+
+# === 2. Bridge główny (vlan-filtering = na razie OFF) =======================
+:if ([:len [/interface bridge find where name="bridge"]] = 0) do={
+    /interface bridge add name="bridge" \
+        protocol-mode=rstp \
+        vlan-filtering=no \
+        comment="Solej main bridge"
+}
+
+# === 3. Bridge ports =========================================================
+# ether1 = WAN (NIE dołączamy do bridge, jest WAN-em)
+# ether2, ether3 = trunki do cAP-ów (mgmt untagged, reszta tagged)
+# ether4 = access VLAN 30 (kamery/NVR)
+# ether5 = access VLAN 20 (serwis/laptop)
+# Czyścimy WSZYSTKIE porty z DOWOLNEGO bridge'a (default config / poprzedni import).
+# To jest agresywne ale konieczne — w przeciwnym razie `add` wywala się gdy port
+# jest już w innym bridge.
+:foreach iface in={"ether2";"ether3";"ether4";"ether5"} do={
+    :foreach bp in=[/interface bridge port find where interface=$iface] do={
+        /interface bridge port remove $bp
+    }
+}
+/interface bridge port add bridge=bridge interface=ether2 pvid=10 \
+    comment="solej-mgr: trunk -> cAP pietro 1 (mgmt VLAN 10 native)"
+/interface bridge port add bridge=bridge interface=ether3 pvid=10 \
+    comment="solej-mgr: trunk -> cAP pietro 2 (mgmt VLAN 10 native)"
+/interface bridge port add bridge=bridge interface=ether4 pvid=30 \
+    frame-types=admit-only-untagged-and-priority-tagged \
+    comment="solej-mgr: access VLAN 30 -> NVR/kamery"
+/interface bridge port add bridge=bridge interface=ether5 pvid=20 \
+    frame-types=admit-only-untagged-and-priority-tagged \
+    comment="solej-mgr: access VLAN 20 -> serwis/laptop"
+
+# === 4. Bridge VLAN table ===================================================
+/interface bridge vlan remove [find where bridge="bridge"]
+/interface bridge vlan add bridge=bridge vlan-ids=10 \
+    tagged=bridge untagged=ether2,ether3 \
+    comment="solej-mgr: VLAN 10 mgmt (native na trunkach)"
+/interface bridge vlan add bridge=bridge vlan-ids=20 \
+    tagged=bridge,ether2,ether3 untagged=ether5 \
+    comment="solej-mgr: VLAN 20 priv (Solej-priv)"
+/interface bridge vlan add bridge=bridge vlan-ids=30 \
+    tagged=bridge,ether2,ether3 untagged=ether4 \
+    comment="solej-mgr: VLAN 30 cams (Solej-Cams)"
+/interface bridge vlan add bridge=bridge vlan-ids=40 \
+    tagged=bridge,ether2,ether3 \
+    comment="solej-mgr: VLAN 40 guest (Solej-Guest hotspot)"
+
+# === 5. VLAN interfaces (nad bridge) ========================================
+:if ([:len [/interface vlan find where name="vlan-mgmt"]] = 0) do={
+    /interface vlan add name="vlan-mgmt"  vlan-id=10 interface=bridge
+}
+:if ([:len [/interface vlan find where name="vlan-priv"]] = 0) do={
+    /interface vlan add name="vlan-priv"  vlan-id=20 interface=bridge
+}
+:if ([:len [/interface vlan find where name="vlan-cams"]] = 0) do={
+    /interface vlan add name="vlan-cams"  vlan-id=30 interface=bridge
+}
+:if ([:len [/interface vlan find where name="vlan-guest"]] = 0) do={
+    /interface vlan add name="vlan-guest" vlan-id=40 interface=bridge
+}
+
+# === 6. Interface lists =====================================================
+:foreach lname in={"WAN";"LAN";"MGMT";"PRIV";"CAMS";"GUEST";"VPN"} do={
+    :if ([:len [/interface list find where name=$lname]] = 0) do={
+        /interface list add name=$lname
+    }
+}
+# Czyścimy WSZYSTKIE wpisy z naszych list (też te z default config, bez taggu)
+:foreach lname in={"WAN";"LAN";"MGMT";"PRIV";"CAMS";"GUEST";"VPN"} do={
+    :foreach m in=[/interface list member find where list=$lname] do={
+        /interface list member remove $m
+    }
+}
+/interface list member add list="WAN"   interface=ether1     comment="solej-mgr"
+/interface list member add list="LAN"   interface=vlan-mgmt  comment="solej-mgr"
+/interface list member add list="LAN"   interface=vlan-priv  comment="solej-mgr"
+/interface list member add list="LAN"   interface=vlan-cams  comment="solej-mgr"
+/interface list member add list="LAN"   interface=vlan-guest comment="solej-mgr"
+/interface list member add list="MGMT"  interface=vlan-mgmt  comment="solej-mgr"
+/interface list member add list="PRIV"  interface=vlan-priv  comment="solej-mgr"
+/interface list member add list="CAMS"  interface=vlan-cams  comment="solej-mgr"
+/interface list member add list="GUEST" interface=vlan-guest comment="solej-mgr"
+# WireGuard "Back to Home" interface zostanie dodany automatycznie po
+# aktywacji w GUI - dorzucimy go do listy VPN przez scheduler na końcu.
+
+# === 7. IP addressing =======================================================
+/ip address remove [find where comment~"solej-mgr"]
+/ip address add address=10.20.10.1/24 interface=vlan-mgmt  comment="solej-mgr: mgmt gw"
+/ip address add address=10.20.20.1/24 interface=vlan-priv  comment="solej-mgr: priv gw"
+/ip address add address=10.20.30.1/24 interface=vlan-cams  comment="solej-mgr: cams gw"
+/ip address add address=10.20.40.1/24 interface=vlan-guest comment="solej-mgr: guest gw"
+
+# === 8. WAN: DHCP client na ether1 (LHG passthrough) ========================
+:if ([:len [/ip dhcp-client find where interface=ether1]] = 0) do={
+    /ip dhcp-client add interface=ether1 disabled=no \
+        use-peer-dns=no use-peer-ntp=no \
+        comment="WAN/LTE od LHG passthrough"
+}
+
+# === 9. DHCP servery ========================================================
+# Pool-e
+:foreach p in={
+    {name="pool-mgmt";  range="10.20.10.100-10.20.10.199"};
+    {name="pool-priv";  range="10.20.20.100-10.20.20.199"};
+    {name="pool-cams";  range="10.20.30.100-10.20.30.199"};
+    {name="pool-guest"; range="10.20.40.50-10.20.40.250"}
+} do={
+    :if ([:len [/ip pool find where name=($p->"name")]] = 0) do={
+        /ip pool add name=($p->"name") ranges=($p->"range")
+    }
+}
+
+# Servery
+:if ([:len [/ip dhcp-server find where name="dhcp-mgmt"]] = 0) do={
+    /ip dhcp-server add name="dhcp-mgmt"  interface=vlan-mgmt  address-pool="pool-mgmt"  lease-time=1d  disabled=no
+}
+:if ([:len [/ip dhcp-server find where name="dhcp-priv"]] = 0) do={
+    /ip dhcp-server add name="dhcp-priv"  interface=vlan-priv  address-pool="pool-priv"  lease-time=1d  disabled=no
+}
+:if ([:len [/ip dhcp-server find where name="dhcp-cams"]] = 0) do={
+    /ip dhcp-server add name="dhcp-cams"  interface=vlan-cams  address-pool="pool-cams"  lease-time=1d  disabled=no
+}
+:if ([:len [/ip dhcp-server find where name="dhcp-guest"]] = 0) do={
+    /ip dhcp-server add name="dhcp-guest" interface=vlan-guest address-pool="pool-guest" lease-time=2h disabled=no
+}
+
+# DHCP networks (gateway + DNS)
+/ip dhcp-server network remove [find where comment~"solej-mgr"]
+/ip dhcp-server network add address=10.20.10.0/24 gateway=10.20.10.1 dns-server=10.20.10.1 comment="solej-mgr: mgmt"
+/ip dhcp-server network add address=10.20.20.0/24 gateway=10.20.20.1 dns-server=10.20.20.1 comment="solej-mgr: priv"
+/ip dhcp-server network add address=10.20.30.0/24 gateway=10.20.30.1 dns-server=10.20.30.1 comment="solej-mgr: cams"
+# guest dostaje publiczne DNS (nie nasze) - mniej cache'owania, RODO friendly
+/ip dhcp-server network add address=10.20.40.0/24 gateway=10.20.40.1 dns-server=1.1.1.1,8.8.8.8 comment="solej-mgr: guest"
+
+# === 10. DNS server lokalny ================================================
+/ip dns set servers=1.1.1.1,8.8.8.8 allow-remote-requests=yes
+
+# === 11. NTP ================================================================
+/system ntp client set enabled=yes servers="pl.pool.ntp.org,europe.pool.ntp.org"
+
+# === 12. NAT (masquerade na WAN) ============================================
+# Reguły taggowane "solej-mgr:" - kolejne uruchomienie skryptu wyczyści tylko nasze
+/ip firewall nat remove [find where comment~"solej-mgr"]
+/ip firewall nat add chain=srcnat action=masquerade out-interface=ether1 \
+    src-address=10.20.0.0/16 comment="solej-mgr: LAN -> WAN/LTE"
+/ip firewall nat add chain=srcnat action=masquerade out-interface=vlan-guest \
+    comment="solej-mgr: hotspot hairpin"
+
+# === 13. Firewall: INPUT ====================================================
+/ip firewall filter remove [find where comment~"solej-mgr"]
+
+/ip firewall filter add chain=input action=accept connection-state=established,related,untracked \
+    comment="solej-mgr: established/related/untracked"
+/ip firewall filter add chain=input action=drop connection-state=invalid \
+    comment="solej-mgr: invalid"
+/ip firewall filter add chain=input action=accept protocol=icmp limit=50,5:packet \
+    comment="solej-mgr: icmp limited"
+
+# Zarządzanie z LAN ustawione przez interface lists
+/ip firewall filter add chain=input action=accept in-interface-list=MGMT \
+    comment="solej-mgr: admin z mgmt VLAN"
+/ip firewall filter add chain=input action=accept in-interface-list=PRIV \
+    comment="solej-mgr: admin z priv VLAN"
+/ip firewall filter add chain=input action=accept in-interface-list=VPN \
+    comment="solej-mgr: admin z VPN (Back to Home)"
+
+# Goście: tylko DNS + DHCP + hotspot (do gateway)
+/ip firewall filter add chain=input action=accept in-interface-list=GUEST \
+    protocol=udp dst-port=53,67 comment="solej-mgr: guest DNS/DHCP"
+/ip firewall filter add chain=input action=accept in-interface-list=GUEST \
+    protocol=tcp dst-port=53,80,443,64872,64873 comment="solej-mgr: guest DNS/hotspot"
+
+# Drop wszystkiego innego
+/ip firewall filter add chain=input action=drop comment="solej-mgr: drop all other input"
+
+# === 14. Firewall: FORWARD =================================================
+/ip firewall filter add chain=forward action=accept connection-state=established,related,untracked \
+    comment="solej-mgr: established/related/untracked"
+/ip firewall filter add chain=forward action=drop connection-state=invalid \
+    comment="solej-mgr: invalid"
+/ip firewall filter add chain=forward action=fasttrack-connection \
+    connection-state=established,related hw-offload=yes comment="solej-mgr: fasttrack"
+
+# Kamery: DROP do internetu (mają być offline)
+/ip firewall filter add chain=forward action=drop in-interface-list=CAMS \
+    out-interface-list=WAN comment="solej-mgr: cams nie wychodzą do WAN"
+
+# Goście: ZAKAZ klient-klient, ZAKAZ do innych VLANów (LAN-isolation)
+/ip firewall filter add chain=forward action=drop in-interface-list=GUEST \
+    out-interface-list=GUEST comment="solej-mgr: guest <-> guest BLOCK"
+/ip firewall filter add chain=forward action=drop in-interface-list=GUEST \
+    dst-address=10.20.0.0/16 comment="solej-mgr: guest -> any LAN BLOCK"
+/ip firewall filter add chain=forward action=drop in-interface-list=GUEST \
+    dst-address=192.168.0.0/16 comment="solej-mgr: guest -> 192.168/16 BLOCK"
+/ip firewall filter add chain=forward action=drop in-interface-list=GUEST \
+    dst-address=172.16.0.0/12 comment="solej-mgr: guest -> 172.16/12 BLOCK"
+
+# LAN -> WAN i LAN -> LAN dla zaufanych
+/ip firewall filter add chain=forward action=accept in-interface-list=PRIV \
+    comment="solej-mgr: priv -> wszystko"
+/ip firewall filter add chain=forward action=accept in-interface-list=MGMT \
+    comment="solej-mgr: mgmt -> wszystko"
+/ip firewall filter add chain=forward action=accept in-interface-list=VPN \
+    comment="solej-mgr: VPN -> wszystko (zarządzanie zdalne)"
+
+# Goście -> WAN (po zalogowaniu w hotspot)
+/ip firewall filter add chain=forward action=accept in-interface-list=GUEST \
+    out-interface-list=WAN comment="solej-mgr: guest -> internet"
+
+# Drop wszystkiego innego
+/ip firewall filter add chain=forward action=drop comment="solej-mgr: drop all other forward"
+
+# === 15. Bridge VLAN filtering ON =========================================
+# WŁĄCZENIE PO konfiguracji wszystkich VLAN-ów - od teraz bridge filtruje VLANy.
+/interface bridge set [find name=bridge] vlan-filtering=yes
+
+# === 16. WiFi (lokalne radia hAP) - parter recepcji ========================
+# Lokalna konfiguracja na hAP (CAPsMAN provisioning też złapie hAP-a jako CAP).
+# Zostawiamy lokalne wifi w trybie "ap" zarządzanym przez tego samego CAPsMAN.
+# Konfiguracja CAPsMAN niżej.
+
+# === 17. CAPsMAN: security profiles ========================================
+:if ([:len [/interface wifi security find where name="sec-priv"]] = 0) do={
+    /interface wifi security add name="sec-priv" \
+        authentication-types=wpa2-psk,wpa3-psk \
+        passphrase="__PLACEHOLDER_PRIV_WIFI_PASSWORD__" \
+        ft=yes ft-over-ds=yes \
+        comment="Solej-priv WPA2/3"
+}
+:if ([:len [/interface wifi security find where name="sec-open"]] = 0) do={
+    /interface wifi security add name="sec-open" \
+        authentication-types="" \
+        comment="Solej-Guest open (hotspot na warstwie wyzej)"
+}
+:if ([:len [/interface wifi security find where name="sec-cams"]] = 0) do={
+    /interface wifi security add name="sec-cams" \
+        authentication-types=wpa2-psk \
+        passphrase="__PLACEHOLDER_CAMS_WIFI_PASSWORD__" \
+        comment="Solej-Cams WPA2"
+}
+
+# === 18. CAPsMAN: datapath (bridge + VLAN) =================================
+:if ([:len [/interface wifi datapath find where name="dp-priv"]] = 0) do={
+    /interface wifi datapath add name="dp-priv" bridge=bridge vlan-id=20 \
+        client-isolation=no comment="datapath priv VLAN 20"
+}
+:if ([:len [/interface wifi datapath find where name="dp-guest"]] = 0) do={
+    /interface wifi datapath add name="dp-guest" bridge=bridge vlan-id=40 \
+        client-isolation=yes comment="datapath guest VLAN 40 (L2 isolation)"
+}
+:if ([:len [/interface wifi datapath find where name="dp-cams"]] = 0) do={
+    /interface wifi datapath add name="dp-cams" bridge=bridge vlan-id=30 \
+        client-isolation=no comment="datapath cams VLAN 30"
+}
+
+# === 19. CAPsMAN: configurations (po jednej per SSID per pasmo) ============
+# 2 GHz
+:if ([:len [/interface wifi configuration find where name="cfg-priv-2g"]] = 0) do={
+    /interface wifi configuration add name="cfg-priv-2g" ssid="Solej-priv" \
+        mode=ap security=sec-priv datapath=dp-priv country=poland \
+        comment="Solej-priv 2.4G"
+}
+:if ([:len [/interface wifi configuration find where name="cfg-guest-2g"]] = 0) do={
+    /interface wifi configuration add name="cfg-guest-2g" ssid="Solej-Guest" \
+        mode=ap security=sec-open datapath=dp-guest country=poland \
+        comment="Solej-Guest 2.4G open + hotspot"
+}
+:if ([:len [/interface wifi configuration find where name="cfg-cams-2g"]] = 0) do={
+    /interface wifi configuration add name="cfg-cams-2g" ssid="Solej-Cams" \
+        mode=ap security=sec-cams datapath=dp-cams country=poland \
+        disabled=yes comment="Solej-Cams 2.4G (DISABLED do czasu zakupu kamer wifi)"
+}
+# 5 GHz (Solej-priv + Solej-Guest, bez Cams)
+:if ([:len [/interface wifi configuration find where name="cfg-priv-5g"]] = 0) do={
+    /interface wifi configuration add name="cfg-priv-5g" ssid="Solej-priv" \
+        mode=ap security=sec-priv datapath=dp-priv country=poland \
+        comment="Solej-priv 5G"
+}
+:if ([:len [/interface wifi configuration find where name="cfg-guest-5g"]] = 0) do={
+    /interface wifi configuration add name="cfg-guest-5g" ssid="Solej-Guest" \
+        mode=ap security=sec-open datapath=dp-guest country=poland \
+        comment="Solej-Guest 5G"
+}
+
+# === 20. CAPsMAN: provisioning rules =======================================
+# Każdy nowo podłączony cAP/hAP: na 2 GHz dostaje cfg-priv-2g (master)
+# + slave-y cfg-guest-2g, cfg-cams-2g; na 5 GHz cfg-priv-5g + cfg-guest-5g.
+# Uwaga: 2.4GHz nie ma "ac" (AC to tylko 5GHz). Dla 5GHz dodajemy też -n
+# dla starych klientów, jeśli urządzenie nie obsługuje będzie pominięte.
+/interface wifi provisioning remove [find]
+/interface wifi provisioning add supported-bands=2ghz-ax,2ghz-n \
+    master-configuration="cfg-priv-2g" \
+    slave-configurations="cfg-guest-2g,cfg-cams-2g" \
+    action=create-enabled comment="auto provision 2G"
+/interface wifi provisioning add supported-bands=5ghz-ax,5ghz-ac \
+    master-configuration="cfg-priv-5g" \
+    slave-configurations="cfg-guest-5g" \
+    action=create-enabled comment="auto provision 5G"
+
+# === 21. CAPsMAN: enable ====================================================
+# W RouterOS 7.21 wystarczy enabled=yes — CAPsMAN domyślnie nasłuchuje na
+# wszystkich interfejsach i sam generuje certyfikat self-signed przy starcie.
+/interface wifi capsman set enabled=yes
+
+# === 22. Lokalne wifi hAP-a -> tryb cap ====================================
+# Lokalne radia hAP-a same się zaprovisionują przez CAPsMAN.
+:foreach w in=[/interface wifi find] do={
+    /interface wifi set $w configuration.manager=capsman disabled=no
+}
+
+# === 23. Hotspot dla Solej-Guest (VLAN 40) =================================
+:if ([:len [/ip pool find where name="pool-guest-hs"]] = 0) do={
+    /ip pool add name="pool-guest-hs" ranges=10.20.40.50-10.20.40.250
+}
+
+# Profil użytkownika "guest" (rate limit + sesja)
+:if ([:len [/ip hotspot user profile find where name="guest"]] = 0) do={
+    /ip hotspot user profile add name="guest" \
+        rate-limit="10M/30M" \
+        shared-users=3 \
+        session-timeout=7d \
+        idle-timeout=30m \
+        keepalive-timeout=2m \
+        status-autorefresh=10m
+}
+# (rate-limit "tx/rx" — tx z punktu widzenia routera = upload klienta -> 10M up, 30M down)
+
+# Profil hotspot
+:if ([:len [/ip hotspot profile find where name="solej-hs"]] = 0) do={
+    /ip hotspot profile add name="solej-hs" \
+        hotspot-address=10.20.40.1 \
+        dns-name="hotspot.solej.local" \
+        login-by=trial,http-pap \
+        trial-uptime-limit=7d \
+        trial-uptime-reset=7d \
+        trial-user-profile=guest \
+        html-directory=hotspot \
+        http-cookie-lifetime=7d \
+        rate-limit="" \
+        use-radius=no
+}
+
+# Włączenie hotspot na vlan-guest
+:if ([:len [/ip hotspot find where name="hotspot-guest"]] = 0) do={
+    /ip hotspot add name="hotspot-guest" \
+        interface=vlan-guest \
+        profile="solej-hs" \
+        address-pool="pool-guest-hs" \
+        addresses-per-mac=3 \
+        idle-timeout=30m \
+        keepalive-timeout=2m \
+        disabled=no
+}
+
+# Walled garden — strony dostępne BEZ logowania (Apple/Android/Windows captive check)
+/ip hotspot walled-garden remove [find where comment~"solej-mgr"]
+/ip hotspot walled-garden add dst-host="*.apple.com" comment="solej-mgr: iOS captive detection"
+/ip hotspot walled-garden add dst-host="captive.apple.com" comment="solej-mgr: iOS captive"
+/ip hotspot walled-garden add dst-host="*.gstatic.com" comment="solej-mgr: Android captive detection"
+/ip hotspot walled-garden add dst-host="connectivitycheck.gstatic.com" comment="solej-mgr: Android captive"
+/ip hotspot walled-garden add dst-host="*.msftconnecttest.com" comment="solej-mgr: Windows captive"
+
+# === 24. Cloud / Back to Home prep =========================================
+/ip cloud set ddns-enabled=yes update-time=yes
+# Aktywacja Back to Home VPN: WinBox -> IP -> Cloud -> Back to Home
+# (ten skrypt nie aktywuje, bo wymaga konta MikroTik i interakcji)
+
+# Po aktywacji Back to Home, scheduler doda interfejs do listy VPN
+:if ([:len [/system scheduler find where name="add-bth-to-vpn-list"]] = 0) do={
+    /system scheduler add name="add-bth-to-vpn-list" \
+        interval=5m start-time=startup \
+        on-event=":foreach i in=[/interface wireguard find where name~\"back-to-home\"] do={ :local n [/interface wireguard get \$i name]; :if ([:len [/interface list member find where list=\"VPN\" and interface=\$n]] = 0) do={ /interface list member add list=VPN interface=\$n; :log info \"BtH dodane do listy VPN\" } } " \
+        comment="auto-add Back to Home VPN do listy VPN"
+}
+
+# === 25. Hardening services =================================================
+/ip service set telnet disabled=yes
+/ip service set ftp disabled=yes
+/ip service set www disabled=yes
+/ip service set api disabled=yes
+/ip service set api-ssl disabled=yes
+/ip service set www-ssl disabled=yes
+# Winbox/SSH tylko z LAN i VPN (firewall i tak filtruje, ale "defense in depth")
+/ip service set winbox disabled=no port=8291
+/ip service set ssh disabled=no port=22
+
+/tool mac-server set allowed-interface-list="MGMT"
+/tool mac-server mac-winbox set allowed-interface-list="MGMT"
+/tool mac-server ping set enabled=no
+/ip neighbor discovery-settings set discover-interface-list="MGMT"
+/tool bandwidth-server set enabled=no
+/tool romon set enabled=no
+
+# Disable IPv6 jeśli operator nie daje (uproszczenie firewalla)
+/ipv6 settings set disable-ipv6=yes
+
+:log info "hAP-Solej: konfiguracja zakończona"
+:put "OK. Aktywuj Back to Home: WinBox -> IP -> Cloud -> Back to Home -> Enable"
+:put "Sprawdź: /interface wifi capsman print, /ip dhcp-server lease print"

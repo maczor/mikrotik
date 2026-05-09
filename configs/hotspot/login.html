@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Solej WiFi — Logowanie</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(135deg, #1a3a52 0%, #2d5f7f 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+}
+.card {
+    background: rgba(255,255,255,0.97);
+    color: #222;
+    border-radius: 14px;
+    padding: 36px 32px;
+    max-width: 440px;
+    width: calc(100% - 32px);
+    box-shadow: 0 14px 40px rgba(0,0,0,0.3);
+}
+h1 {
+    margin: 0 0 8px;
+    font-size: 26px;
+    color: #1a3a52;
+    text-align: center;
+}
+.subtitle {
+    text-align: center;
+    color: #666;
+    margin-bottom: 24px;
+    font-size: 14px;
+}
+.tos {
+    background: #f5f7fa;
+    border-radius: 8px;
+    padding: 16px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #444;
+    margin-bottom: 20px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+.tos strong { color: #1a3a52; }
+button {
+    width: 100%;
+    background: #1a3a52;
+    color: #fff;
+    border: 0;
+    padding: 14px;
+    font-size: 16px;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+button:hover { background: #2d5f7f; }
+button:active { background: #0d2638; }
+.footer {
+    text-align: center;
+    margin-top: 16px;
+    color: #999;
+    font-size: 12px;
+}
+.error {
+    background: #fee;
+    border: 1px solid #fcc;
+    color: #900;
+    padding: 10px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-size: 13px;
+}
+</style>
+</head>
+<body>
+<div class="card">
+    <h1>Solej WiFi</h1>
+    <p class="subtitle">Witamy w sieci hotelowej</p>
+
+    $(if error)
+    <div class="error">$(error)</div>
+    $(endif)
+
+    <div class="tos">
+        <strong>Regulamin korzystania z sieci:</strong><br />
+        1. Sieć udostępniana jest gościom hotelu Solej bezpłatnie.<br />
+        2. Sesja jest ważna przez <strong>7 dni</strong> od pierwszego logowania.
+        Po tym czasie należy ponownie zaakceptować regulamin.<br />
+        3. Korzystanie z sieci do celów niezgodnych z prawem jest zabronione.
+        Operator nie odpowiada za treści udostępniane lub pobierane przez
+        użytkowników.<br />
+        4. Adres MAC urządzenia oraz czas sesji są logowane na potrzeby
+        bezpieczeństwa sieci (RODO art. 6 ust. 1 lit. f — uzasadniony interes
+        administratora).<br />
+        5. Limit prędkości: 30 Mb/s pobieranie / 10 Mb/s wysyłanie.
+    </div>
+
+    <form name="login" action="$(link-login-only)" method="post">
+        <input type="hidden" name="dst" value="$(link-orig)" />
+        <input type="hidden" name="popup" value="true" />
+        <input type="hidden" name="username" value="T-$(mac-esc)" />
+        <button type="submit">Akceptuję regulamin i łączę się</button>
+    </form>
+
+    <p class="footer">Hotel Solej · WiFi powered by MikroTik</p>
+</div>
+</body>
+</html>

@@ -1,0 +1,5 @@
+# Sekrety - NIGDY nie commituj
+.env
+out/
+**/.DS_Store
+.claude
