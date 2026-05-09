@@ -86,7 +86,9 @@ if [[ ! "$HAP_ETHER1_MAC" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]]; then
     errors=$((errors+1))
 fi
 # MAC nie może być placeholderem 00:00:... ani broadcast FF:FF:...
-if [[ "$HAP_ETHER1_MAC" == "00:00:00:00:00:00" || "${HAP_ETHER1_MAC,,}" == "ff:ff:ff:ff:ff:ff" ]]; then
+# (tr zamiast ${var,,} bo macOS ma bash 3.2 bez lowercase expansion)
+mac_lower=$(printf '%s' "$HAP_ETHER1_MAC" | tr '[:upper:]' '[:lower:]')
+if [[ "$mac_lower" == "00:00:00:00:00:00" || "$mac_lower" == "ff:ff:ff:ff:ff:ff" ]]; then
     echo "BŁĄD: HAP_ETHER1_MAC ($HAP_ETHER1_MAC) jest placeholderem — wpisz prawdziwy MAC ether1 hAP" >&2
     errors=$((errors+1))
 fi
