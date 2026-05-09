@@ -74,8 +74,8 @@ for var in "${REQUIRED_VARS[@]}"; do
     if [[ -z "$val" ]]; then
         echo "BŁĄD: zmienna $var jest pusta" >&2
         errors=$((errors+1))
-    elif [[ "$val" == zmien-mnie* ]]; then
-        echo "BŁĄD: zmienna $var nie została zmieniona z domyślnej wartości" >&2
+    elif [[ "$val" == zmien-* ]]; then
+        echo "BŁĄD: zmienna $var nie została zmieniona z domyślnej wartości (zaczyna się od 'zmien-')" >&2
         errors=$((errors+1))
     fi
 done
@@ -83,6 +83,11 @@ done
 # Specyficzna walidacja: MAC format
 if [[ ! "$HAP_ETHER1_MAC" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]]; then
     echo "BŁĄD: HAP_ETHER1_MAC ($HAP_ETHER1_MAC) nie jest poprawnym MAC-iem (AA:BB:CC:DD:EE:FF)" >&2
+    errors=$((errors+1))
+fi
+# MAC nie może być placeholderem 00:00:... ani broadcast FF:FF:...
+if [[ "$HAP_ETHER1_MAC" == "00:00:00:00:00:00" || "${HAP_ETHER1_MAC,,}" == "ff:ff:ff:ff:ff:ff" ]]; then
+    echo "BŁĄD: HAP_ETHER1_MAC ($HAP_ETHER1_MAC) jest placeholderem — wpisz prawdziwy MAC ether1 hAP" >&2
     errors=$((errors+1))
 fi
 

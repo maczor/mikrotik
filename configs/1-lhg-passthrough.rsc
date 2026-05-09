@@ -51,7 +51,11 @@
     passthrough-mac="__PLACEHOLDER_HAP_ETHER1_MAC__"
 
 # --- Lokalny IP na ether1 -----------------------------------------------------
-# Awaryjny dostęp do LHG (np. laptop bezpośrednio do anteny przez kabel),
+# UWAGA: w trybie LTE passthrough ramki idą bezpośrednio do MAC hAP (omijają stos IP).
+# Ten lokalny IP/DHCP/firewall działa TYLKO gdy LHG jest podpięty bezpośrednio do
+# laptopa (kabel serwisowy, hAP odłączony). Gdy LHG jedzie w trybie produkcyjnym
+# (passthrough do hAP), te wpisy są niefunkcjonalne — to OK, zostają jako
+# "service mode access", aktywują się gdy odepniesz hAP.
 # 192.168.99.0/24 nie koliduje z 10.20.x.x sieci hotelu.
 :if ([:len [/ip address find where address="192.168.99.1/24"]] = 0) do={
     /ip address add address=192.168.99.1/24 interface=ether1 comment="solej-mgr: LHG service LAN"

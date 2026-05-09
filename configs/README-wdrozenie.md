@@ -108,10 +108,9 @@ W terminalu hAP:
 /interface ethernet print
 ```
 
-Skopiuj MAC z linii `ether1` (format `XX:XX:XX:XX:XX:XX`). Wpisz go do `.env` jako `HAP_ETHER1_MAC` i ponownie odpal:
+Skopiuj MAC z linii `ether1` (format `XX:XX:XX:XX:XX:XX`). Wpisz go do `.env` jako `HAP_ETHER1_MAC` i ponownie odpal — z **roota projektu** (gdzie leży `render.sh`):
 
 ```bash
-cd configs/
 vi .env                  # ustaw HAP_ETHER1_MAC
 ./render.sh              # wygeneruj na nowo
 ```

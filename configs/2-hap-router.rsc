@@ -180,8 +180,9 @@
 /ip firewall nat remove [find where comment~"solej-mgr"]
 /ip firewall nat add chain=srcnat action=masquerade out-interface=ether1 \
     src-address=10.20.0.0/16 comment="solej-mgr: LAN -> WAN/LTE"
-/ip firewall nat add chain=srcnat action=masquerade out-interface=vlan-guest \
-    comment="solej-mgr: hotspot hairpin"
+# (poprzednia wersja miała tu drugą regułę masquerade out-interface=vlan-guest
+# z komentarzem "hotspot hairpin" — w MikroTik hotspot redirect działa bez tego,
+# a niepotrzebny SRC-NAT na interfejsie LAN tylko myli debugowanie. Usunięte.)
 
 # === 13. Firewall: INPUT ====================================================
 /ip firewall filter remove [find where comment~"solej-mgr"]
@@ -264,8 +265,8 @@
     /interface wifi security add name="sec-priv" \
         authentication-types=wpa2-psk,wpa3-psk \
         passphrase="__PLACEHOLDER_PRIV_WIFI_PASSWORD__" \
-        ft=yes ft-over-ds=yes \
-        comment="Solej-priv WPA2/3"
+        ft=yes ft-over-ds=yes ft-mobility-domain=0xa1b2 \
+        comment="Solej-priv WPA2/3 + 802.11r FT"
 }
 :if ([:len [/interface wifi security find where name="sec-open"]] = 0) do={
     /interface wifi security add name="sec-open" \
@@ -344,8 +345,15 @@
 
 # === 22. Lokalne wifi hAP-a -> tryb cap ====================================
 # Lokalne radia hAP-a same się zaprovisionują przez CAPsMAN.
+# Najpierw ustawiamy manager=capsman (radia jeszcze disabled), dopiero PO
+# zaczekaniu 2s (CAPsMAN zdąży przyjąć kandydata) włączamy je — żeby nie
+# emitowały default SSID w oknie między enable a provisioning.
 :foreach w in=[/interface wifi find] do={
-    /interface wifi set $w configuration.manager=capsman disabled=no
+    /interface wifi set $w configuration.manager=capsman
+}
+:delay 2s
+:foreach w in=[/interface wifi find] do={
+    /interface wifi set $w disabled=no
 }
 
 # === 23. Hotspot dla Solej-Guest (VLAN 40) =================================
@@ -407,11 +415,13 @@
 # Aktywacja Back to Home VPN: WinBox -> IP -> Cloud -> Back to Home
 # (ten skrypt nie aktywuje, bo wymaga konta MikroTik i interakcji)
 
-# Po aktywacji Back to Home, scheduler doda interfejs do listy VPN
+# Po aktywacji Back to Home, scheduler doda interfejs do listy VPN.
+# RouterOS 7.21 tworzy WG interface o nazwach typu "back-to-home", "BTHome", "bth-*"
+# w zależności od buildu/wersji — szukamy wszystkich kandydatów (case-insensitive).
 :if ([:len [/system scheduler find where name="add-bth-to-vpn-list"]] = 0) do={
     /system scheduler add name="add-bth-to-vpn-list" \
         interval=5m start-time=startup \
-        on-event=":foreach i in=[/interface wireguard find where name~\"back-to-home\"] do={ :local n [/interface wireguard get \$i name]; :if ([:len [/interface list member find where list=\"VPN\" and interface=\$n]] = 0) do={ /interface list member add list=VPN interface=\$n; :log info \"BtH dodane do listy VPN\" } } " \
+        on-event=":foreach i in=[/interface wireguard find] do={ :local n [/interface wireguard get \$i name]; :local ln [:tolower \$n]; :if ([:find \$ln \"back-to-home\"] >= 0 or [:find \$ln \"bthome\"] >= 0 or [:find \$ln \"bth-\"] >= 0) do={ :if ([:len [/interface list member find where list=\"VPN\" and interface=\$n]] = 0) do={ /interface list member add list=VPN interface=\$n; :log info (\"BtH (\" . \$n . \") dodane do listy VPN\") } } } " \
         comment="auto-add Back to Home VPN do listy VPN"
 }
 
