@@ -211,12 +211,15 @@
 /ip firewall filter add chain=input action=drop comment="solej-mgr: drop all other input"
 
 # === 14. Firewall: FORWARD =================================================
+# Kolejność: fasttrack PRZED accept established/related — accept jest terminalny,
+# więc gdyby był pierwszy, pakiety nie dotarłyby do fasttrack i hw-offload by
+# nigdy nie zadziałał. Default config MikroTika ma ten sam porządek.
+/ip firewall filter add chain=forward action=fasttrack-connection \
+    connection-state=established,related hw-offload=yes comment="solej-mgr: fasttrack"
 /ip firewall filter add chain=forward action=accept connection-state=established,related,untracked \
     comment="solej-mgr: established/related/untracked"
 /ip firewall filter add chain=forward action=drop connection-state=invalid \
     comment="solej-mgr: invalid"
-/ip firewall filter add chain=forward action=fasttrack-connection \
-    connection-state=established,related hw-offload=yes comment="solej-mgr: fasttrack"
 
 # Kamery: DROP do internetu (mają być offline)
 /ip firewall filter add chain=forward action=drop in-interface-list=CAMS \
@@ -346,9 +349,8 @@
 }
 
 # === 23. Hotspot dla Solej-Guest (VLAN 40) =================================
-:if ([:len [/ip pool find where name="pool-guest-hs"]] = 0) do={
-    /ip pool add name="pool-guest-hs" ranges=10.20.40.50-10.20.40.250
-}
+# Hotspot reużywa puli pool-guest zdefiniowanej w sekcji 9 (DHCP servers) —
+# ten sam zakres 10.20.40.50-10.20.40.250, więc nie ma sensu duplikować.
 
 # Profil użytkownika "guest" (rate limit + sesja)
 :if ([:len [/ip hotspot user profile find where name="guest"]] = 0) do={
@@ -385,7 +387,7 @@
     /ip hotspot add name="hotspot-guest" \
         interface=vlan-guest \
         profile="solej-hs" \
-        address-pool="pool-guest-hs" \
+        address-pool="pool-guest" \
         addresses-per-mac=3 \
         idle-timeout=30m \
         keepalive-timeout=2m \

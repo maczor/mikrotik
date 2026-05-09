@@ -124,8 +124,9 @@
 
 # --- LED na panelu LHG: pokazuj LTE signal ------------------------------------
 # (działa na LHG LTE6/LTE18 — pokazuje siłę sygnału na LED)
+# type=modem-signal pokazuje SIŁĘ sygnału (interface-status pokazuje tylko up/down).
 :do {
-    /system leds set [find leds="lte_signal1"] type=interface-status interface=lte1
+    /system leds set [find leds="lte_signal1"] type=modem-signal interface=lte1
 } on-error={
     :log info "LHG-Solej: LED config - pomijam"
 }
