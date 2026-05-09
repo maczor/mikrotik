@@ -339,9 +339,14 @@
 # (nie ustawia go na pusty string — to ważna różnica, sprawdzona empirycznie
 # na 7.20.8: `set .ssid=""` daje SSID-not-set, a `!.ssid` przywraca z cfg).
 
-# Najpierw kasujemy ewentualne virtual-AP z poprzednich importów (idempotencja)
-:foreach w in=[/interface wifi find where master-interface!=""] do={
-    /interface wifi remove $w
+# Najpierw kasujemy ewentualne virtual-AP z poprzednich importów (idempotencja).
+# UWAGA: filter `master-interface!=""` w 7.20.8 matchuje też master radia
+# (wifi1/wifi2 — fizyczne, których nie wolno usunąć). Zamiast tego filtrujemy
+# po nazwach naszych virtual-AP — bezpieczniej, idempotentnie.
+:foreach vname in={"wifi1-guest";"wifi2-guest";"wifi1-cams";"wifi2-cams"} do={
+    :foreach w in=[/interface wifi find where name=$vname] do={
+        /interface wifi remove $w
+    }
 }
 
 # Master radia: przypisz configuration + wyczyść defconf override-y

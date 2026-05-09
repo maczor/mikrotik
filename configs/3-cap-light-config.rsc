@@ -140,9 +140,13 @@
 }
 
 # === 11. WiFi: local mode + multi-SSID (jak na hAP) ========================
-# Czyścimy stare virtual-AP (idempotencja przy re-imporcie)
-:foreach w in=[/interface wifi find where master-interface!=""] do={
-    /interface wifi remove $w
+# Czyścimy stare virtual-AP (idempotencja przy re-imporcie).
+# Filtrujemy po nazwach — `master-interface!=""` matchuje też master radia
+# w 7.20.8, a próba ich remove wywala /import z "not allowed to remove".
+:foreach vname in={"wifi1-guest";"wifi2-guest"} do={
+    :foreach w in=[/interface wifi find where name=$vname] do={
+        /interface wifi remove $w
+    }
 }
 
 # Master radia: Solej-priv. Per-radio defconf override-y kasujemy przez `!`,
