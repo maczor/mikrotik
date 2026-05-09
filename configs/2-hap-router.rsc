@@ -1,6 +1,6 @@
 # =============================================================================
 # hAP ax3 — Solej Hotel (router główny)
-# Rola: router LTE + DHCP + DNS + firewall + CAPsMAN + hotspot + VPN
+# Rola: router LTE + DHCP + DNS + firewall + lokalne wifi (parter) + hotspot + VPN
 # RouterOS: 7.21.4+
 #
 # PRZED IMPORTEM:
@@ -24,7 +24,7 @@
 #   - Aktywuj VPN: WinBox -> IP -> Cloud -> Back to Home -> zaloguj konto
 #     mikrotik.com -> Enable. Aplikacja na telefon: skanuj QR.
 #   - Sprawdź: /interface print (lista bridge/vlan), /ip address print,
-#     /interface wifi capsman print
+#     /interface wifi print, /interface wifi registration-table print
 # =============================================================================
 
 :log info "hAP-Solej: start konfiguracji"
@@ -256,11 +256,18 @@
 /interface bridge set [find name=bridge] vlan-filtering=yes
 
 # === 16. WiFi (lokalne radia hAP) - parter recepcji ========================
-# Lokalna konfiguracja na hAP (CAPsMAN provisioning też złapie hAP-a jako CAP).
-# Zostawiamy lokalne wifi w trybie "ap" zarządzanym przez tego samego CAPsMAN.
-# Konfiguracja CAPsMAN niżej.
+# Na hAP ax3 w RouterOS 7.20 używamy LOCAL MODE (bez CAPsMAN):
+# - hAP nadaje sam SSID Solej-priv + Solej-Guest na 2.4 i 5 GHz
+# - cAP-y na piętrach mają WŁASNĄ lokalną konfigurację (configs/3-cap-*.rsc),
+#   z TYM SAMYM passphrase + ft-mobility-domain w sec-priv → 802.11r FT
+#   roaming działa pomiędzy hAP a cAP-ami bez CAPsMAN-a.
+#
+# DLACZEGO NIE CAPSMAN: w 7.20.8 wifi-qcom lokalny CAP nie kończy CAPWAP
+# handshake do CAPsMAN-a na tym samym urządzeniu (radia stoją w stanie
+# "no connection to CAPsMAN" — bez błędów w logu). Local mode + powtórzenie
+# tych samych sec-priv/sec-open/sec-cams na każdym AP jest prostsze i działa.
 
-# === 17. CAPsMAN: security profiles ========================================
+# === 17. WiFi: security profiles ===========================================
 :if ([:len [/interface wifi security find where name="sec-priv"]] = 0) do={
     /interface wifi security add name="sec-priv" \
         authentication-types=wpa2-psk,wpa3-psk \
@@ -280,7 +287,7 @@
         comment="Solej-Cams WPA2"
 }
 
-# === 18. CAPsMAN: datapath (bridge + VLAN) =================================
+# === 18. WiFi: datapath (bridge + VLAN) ====================================
 :if ([:len [/interface wifi datapath find where name="dp-priv"]] = 0) do={
     /interface wifi datapath add name="dp-priv" bridge=bridge vlan-id=20 \
         client-isolation=no comment="datapath priv VLAN 20"
@@ -294,64 +301,83 @@
         client-isolation=no comment="datapath cams VLAN 30"
 }
 
-# === 19. CAPsMAN: configurations (po jednej per SSID per pasmo) ============
+# === 19. WiFi: configurations (po jednej per SSID per pasmo) ===============
+# WAŻNE w 7.20+: country MUSI być Pisane PascalCase (Poland), nie "poland".
 # 2 GHz
 :if ([:len [/interface wifi configuration find where name="cfg-priv-2g"]] = 0) do={
     /interface wifi configuration add name="cfg-priv-2g" ssid="Solej-priv" \
-        mode=ap security=sec-priv datapath=dp-priv country=poland \
+        mode=ap security=sec-priv datapath=dp-priv country=Poland \
         comment="Solej-priv 2.4G"
 }
 :if ([:len [/interface wifi configuration find where name="cfg-guest-2g"]] = 0) do={
     /interface wifi configuration add name="cfg-guest-2g" ssid="Solej-Guest" \
-        mode=ap security=sec-open datapath=dp-guest country=poland \
+        mode=ap security=sec-open datapath=dp-guest country=Poland \
         comment="Solej-Guest 2.4G open + hotspot"
 }
 :if ([:len [/interface wifi configuration find where name="cfg-cams-2g"]] = 0) do={
     /interface wifi configuration add name="cfg-cams-2g" ssid="Solej-Cams" \
-        mode=ap security=sec-cams datapath=dp-cams country=poland \
+        mode=ap security=sec-cams datapath=dp-cams country=Poland \
         disabled=yes comment="Solej-Cams 2.4G (DISABLED do czasu zakupu kamer wifi)"
 }
 # 5 GHz (Solej-priv + Solej-Guest, bez Cams)
 :if ([:len [/interface wifi configuration find where name="cfg-priv-5g"]] = 0) do={
     /interface wifi configuration add name="cfg-priv-5g" ssid="Solej-priv" \
-        mode=ap security=sec-priv datapath=dp-priv country=poland \
+        mode=ap security=sec-priv datapath=dp-priv country=Poland \
         comment="Solej-priv 5G"
 }
 :if ([:len [/interface wifi configuration find where name="cfg-guest-5g"]] = 0) do={
     /interface wifi configuration add name="cfg-guest-5g" ssid="Solej-Guest" \
-        mode=ap security=sec-open datapath=dp-guest country=poland \
+        mode=ap security=sec-open datapath=dp-guest country=Poland \
         comment="Solej-Guest 5G"
 }
 
-# === 20. CAPsMAN: provisioning rules =======================================
-# Każdy nowo podłączony cAP/hAP: na 2 GHz dostaje cfg-priv-2g (master)
-# + slave-y cfg-guest-2g, cfg-cams-2g; na 5 GHz cfg-priv-5g + cfg-guest-5g.
-# Uwaga: 2.4GHz nie ma "ac" (AC to tylko 5GHz). Dla 5GHz dodajemy też -n
-# dla starych klientów, jeśli urządzenie nie obsługuje będzie pominięte.
-/interface wifi provisioning remove [find]
-/interface wifi provisioning add supported-bands=2ghz-ax,2ghz-n \
-    master-configuration="cfg-priv-2g" \
-    slave-configurations="cfg-guest-2g,cfg-cams-2g" \
-    action=create-enabled comment="auto provision 2G"
-/interface wifi provisioning add supported-bands=5ghz-ax,5ghz-ac \
-    master-configuration="cfg-priv-5g" \
-    slave-configurations="cfg-guest-5g" \
-    action=create-enabled comment="auto provision 5G"
+# === 20. Lokalne wifi hAP-a: local mode + multi-SSID =======================
+# Defconf przypina wifi1 (5GHz) i wifi2 (2.4GHz) z hardcoded SSID
+# "MikroTik-XXXXXX" i własnym security. Czyścimy te per-radio override-y
+# przez `!`-syntax, żeby radia wzięły wartości z configuration=cfg-priv-*.
+# Per-radio override jest silniejszy niż configuration= — `!` USUWA override
+# (nie ustawia go na pusty string — to ważna różnica, sprawdzona empirycznie
+# na 7.20.8: `set .ssid=""` daje SSID-not-set, a `!.ssid` przywraca z cfg).
 
-# === 21. CAPsMAN: enable ====================================================
-# W RouterOS 7.21 wystarczy enabled=yes — CAPsMAN domyślnie nasłuchuje na
-# wszystkich interfejsach i sam generuje certyfikat self-signed przy starcie.
-/interface wifi capsman set enabled=yes
-
-# === 22. Lokalne wifi hAP-a -> tryb cap ====================================
-# Lokalne radia hAP-a same się zaprovisionują przez CAPsMAN.
-# Najpierw ustawiamy manager=capsman (radia jeszcze disabled), dopiero PO
-# zaczekaniu 2s (CAPsMAN zdąży przyjąć kandydata) włączamy je — żeby nie
-# emitowały default SSID w oknie między enable a provisioning.
-:foreach w in=[/interface wifi find] do={
-    /interface wifi set $w configuration.manager=capsman
+# Najpierw kasujemy ewentualne virtual-AP z poprzednich importów (idempotencja)
+:foreach w in=[/interface wifi find where master-interface!=""] do={
+    /interface wifi remove $w
 }
-:delay 2s
+
+# Master radia: przypisz configuration + wyczyść defconf override-y
+:if ([:len [/interface wifi find where name="wifi1"]] > 0) do={
+    /interface wifi set wifi1 configuration=cfg-priv-5g configuration.manager=local
+    /interface wifi set wifi1 \
+        !configuration.ssid !configuration.mode \
+        !security.passphrase !security.authentication-types \
+        !security.ft !security.ft-over-ds
+}
+:if ([:len [/interface wifi find where name="wifi2"]] > 0) do={
+    /interface wifi set wifi2 configuration=cfg-priv-2g configuration.manager=local
+    /interface wifi set wifi2 \
+        !configuration.ssid !configuration.mode \
+        !security.passphrase !security.authentication-types \
+        !security.ft !security.ft-over-ds
+}
+
+# Slave virtual-AP: Solej-Guest na obu pasmach
+:if ([:len [/interface wifi find where name="wifi1-guest"]] = 0) do={
+    /interface wifi add name=wifi1-guest master-interface=wifi1 \
+        configuration=cfg-guest-5g disabled=no \
+        comment="Solej-Guest 5G (slave wifi1)"
+}
+:if ([:len [/interface wifi find where name="wifi2-guest"]] = 0) do={
+    /interface wifi add name=wifi2-guest master-interface=wifi2 \
+        configuration=cfg-guest-2g disabled=no \
+        comment="Solej-Guest 2.4G (slave wifi2)"
+}
+# Po zakupie kamer wifi: usuń `disabled=yes` z cfg-cams-2g (sekcja 19)
+# i dodaj slave:
+#   /interface wifi configuration set [find name=cfg-cams-2g] disabled=no
+#   /interface wifi add name=wifi2-cams master-interface=wifi2 \
+#       configuration=cfg-cams-2g disabled=no comment="Solej-Cams (slave wifi2)"
+
+# Włączenie wszystkich radii (master + slave)
 :foreach w in=[/interface wifi find] do={
     /interface wifi set $w disabled=no
 }
@@ -452,4 +478,4 @@
 
 :log info "hAP-Solej: konfiguracja zakończona"
 :put "OK. Aktywuj Back to Home: WinBox -> IP -> Cloud -> Back to Home -> Enable"
-:put "Sprawdź: /interface wifi capsman print, /ip dhcp-server lease print"
+:put "Sprawdź: /interface wifi print, /ip dhcp-server lease print"

@@ -67,7 +67,7 @@ Razem MVP
 **MikroTik cAP ax** × 2
 - WiFi 6 (802.11ax), 2.4 + 5 GHz
 - Montaż sufitowy, zasilanie PoE
-- Zarządzanie centralne przez **CAPsMAN v2** (RouterOS 7.x)
+- Zarządzanie: lokalne kopie konfiguracji wifi na każdym AP, wspólny passphrase + 802.11r FT mobility-domain dla seamless roamingu między piętrami
 - Roaming hotelowy bez rozłączeń
 - ~290–320 PLN/szt → **~600 PLN łącznie**
 
@@ -102,13 +102,12 @@ Razem MVP
 - **SIM karta:** sprawdź APN i TTL — niektórzy operatorzy blokują routery. Play, Plus i Magenta mają dedykowane taryfy na routery
 - **Kierunek anteny:** aplikacja **Network Cell Info** (Android) pokazuje kierunek i odległość do BTS
 - **VLAN:** rozdziel sieć gości od sieci wewnętrznej hotelu (recepcja, monitoring, POS)
-- **RouterOS 7.x:** wymagany dla CAPsMAN v2 i wireless mesh — upewnij się że wszystkie urządzenia mają aktualny firmware
 - **Backup LTE:** MikroTik obsługuje failover na drugi slot SIM lub drugi modem — warto rozważyć
 
 ---
 
 ## Przydatne linki
 
-- MikroTik CAPsMAN v2 docs: https://help.mikrotik.com/docs/display/ROS/CAPsMAN
+- MikroTik WiFi (lokalna konfiguracja) docs: https://help.mikrotik.com/docs/display/ROS/WiFi
 - Network Cell Info (Play Store): wyszukaj "Network Cell Info Lite"
 - MikroTik wiki PtP bridge: https://wiki.mikrotik.com/wiki/Bridge

@@ -22,8 +22,8 @@ Wymiana starej instalacji LTE na zestaw MikroTik z agregacją kanałów (LHG LTE
 | Lp. | Model | Rola |
 |---|---|---|
 | 1 | MikroTik LHG LTE18 kit | Antena zewnętrzna + modem LTE Cat18 (passthrough) |
-| 2 | MikroTik hAP ax³ | Router, firewall, DHCP, CAPsMAN, hotspot, VPN, WiFi parteru |
-| 3 | MikroTik cAP ax × 2 | Access pointy na piętra 1 i 2 (managed by CAPsMAN) |
+| 2 | MikroTik hAP ax³ | Router, firewall, DHCP, hotspot, VPN, WiFi parteru (lokalny config) |
+| 3 | MikroTik cAP ax × 2 | Access pointy na piętra 1 i 2 (lokalna konfiguracja wifi, kopia z hAP) |
 
 **Poza zakresem (na razie):** trzeci cAP ax (mesh/repeater), para SXT Lite5 ac (PtP do domku).
 
@@ -38,7 +38,7 @@ Wymiana starej instalacji LTE na zestaw MikroTik z agregacją kanałów (LHG LTE
 [LHG LTE18] ── tryb passthrough (LTE→Ethernet bridge, bez double-NAT)
        │ PoE Ethernet (zasilanie z hAP, jeden kabel)
        ▼ do ether1 (2.5GbE + PoE-out 24V passive)
-[hAP ax³] ── router + NAT + firewall + DHCP + CAPsMAN + hotspot + VPN
+[hAP ax³] ── router + NAT + firewall + DHCP + lokalne wifi + hotspot + VPN
        │
        │ ether1 (2.5GbE, PoE-out 24V) = WAN do LHG ▲
        │
@@ -50,8 +50,9 @@ Wymiana starej instalacji LTE na zestaw MikroTik z agregacją kanałów (LHG LTE
 
 **Założenia:**
 - LHG w **passthrough mode** — IP od operatora trafia bezpośrednio na hAP. Pojedynczy NAT.
-- hAP = całe centrum decyzyjne (single source of truth).
-- cAP ax provisioned przez CAPsMAN — wymiana sprzętu = zero ręcznej konfiguracji.
+- hAP = całe centrum decyzyjne (single source of truth dla routingu/firewalla/DHCP/hotspot).
+- cAP ax mają **lokalną konfigurację wifi** (kopia z hAP, generowana z tych samych zmiennych w `.env`) — wymiana sprzętu = wgranie `3-cap-pietroN.rsc`.
+- **Dlaczego nie CAPsMAN:** empirycznie na RouterOS 7.20.8 (wifi-qcom) lokalny CAP→CAPsMAN bind na **tym samym** urządzeniu nie domyka handshake'u CAPWAP (radio zostaje w stanie "no connection to CAPsMAN" bez błędów w logu). Local mode = każdy AP ma pełny config wifi lokalnie; SSID + passphrase + `ft-mobility-domain=0xa1b2` muszą być **identyczne** na wszystkich AP, żeby roaming 802.11r FT działał płynnie. Tradeoff: zmiana hasła wifi = re-render i push do N urządzeń (`render.sh` to robi z `.env`). Dla ≤5 AP to akceptowalne. CAPsMAN do rozważenia ponownie, jeśli MikroTik naprawi bind w 7.20.x wifi-qcom albo przy większym wdrożeniu.
 - **Bridge VLAN filtering** (RouterOS 7.21.4) — jeden bridge, VLANy rozdzielają strefy.
 
 ---
@@ -79,7 +80,7 @@ Wymiana starej instalacji LTE na zestaw MikroTik z agregacją kanałów (LHG LTE
 | ether3 | 1GbE | brak | trunk (10,20,30,40 tagged) | cAP ax piętro 2 (własny PoE z zestawu cAP) |
 | ether4 | 1GbE | brak | access VLAN 30 | NVR / switch kamer |
 | ether5 | 1GbE | brak | wolny / serwisowy | Laptop diagnostyczny |
-| wlan1/wlan2 | — | — | provisioned przez CAPsMAN | WiFi parteru (3 SSID) |
+| wlan1/wlan2 | — | — | lokalna konfiguracja (kopia z hAP) | WiFi parteru (3 SSID) |
 
 **Margines PoE:** ether1 max 15W przy 24V, LHG LTE18 pobór ~10–12W. OK z marginesem. Jeśli LHG resetuje się pod obciążeniem (rzadkie) — wracasz do PoE injektora z zestawu LHG.
 
@@ -87,7 +88,7 @@ Wymiana starej instalacji LTE na zestaw MikroTik z agregacją kanałów (LHG LTE
 
 - **ether1**: trunk (uplink) — VLAN 10 untagged, reszta tagged.
 - **ether2**: access VLAN 20 (dla TV/PS5 w pokoju właściciela na piętrze).
-- **wlan1/wlan2**: provisioned przez CAPsMAN, 3 SSID-y.
+- **wlan1/wlan2**: lokalna konfiguracja (kopia z hAP), 3 SSID-y.
 
 ---
 
@@ -101,12 +102,13 @@ Wymiana starej instalacji LTE na zestaw MikroTik z agregacją kanałów (LHG LTE
 | `Solej-Guest` | 2.4 + 5 GHz | Open + Hotspot | 40 | enabled |
 | `Solej-Cams` | 2.4 GHz only | WPA2-PSK | 30 | **disabled** |
 
-### CAPsMAN
+### Wifi w trybie lokalnym
 
-- Configuration profile per SSID (3 profile).
-- Datapath per VLAN (3 datapathy z odpowiednim VLAN-id).
-- Provisioning rule: nowy `cAPGi-5HaxD2HaxD` automatycznie dostaje wszystkie 3 SSID-y.
-- Roaming: 802.11k/v/r natywnie (cAP ax wspiera).
+- Każdy AP (hAP + 2× cAP) ma własny, niezależny config wifi w RouterOS — bez centralnego kontrolera.
+- Te same SSID/passphrase + `ft-mobility-domain=0xa1b2` na wszystkich → klienci robią seamless roaming 802.11r Fast Transition między piętrami.
+- 802.11k/v/r natywnie wspierane przez wifi-qcom (cAP ax) i wifi-qcom-ac/wifi (hAP ax³).
+- Konfig generowany z jednego `.env` przez `render.sh` → 3 pliki `.rsc` (hAP + cap-pietro1 + cap-pietro2) z identycznymi parametrami radia.
+- Zmiana hasła = re-render + import na każdym urządzeniu (3 razy). Akceptowalne dla małego wdrożenia.
 
 ### Hotspot dla `Solej-Guest`
 
@@ -200,8 +202,8 @@ masquerade out=ether1 (WAN/LTE), src=10.20.0.0/16
 1. **Przygotowanie:** firmware update do RouterOS **7.21.4** (aktualne stable) na każdym urządzeniu, reset to defaults.
 2. **LHG LTE18:** włożyć SIM, import `1-lhg-passthrough.rsc`, weryfikacja sygnału.
 3. **hAP ax³:** podłączyć LHG do ether1 (2.5GbE+PoE-out — zasili LHG), laptop tymczasowo do ether5 (1GbE), import `2-hap-router.rsc`, ping test, aktywacja Back to Home.
-4. **cAP ax #1:** kabel ether1 do ether2 hAP, czekać na CAPsMAN.
-5. **cAP ax #2:** analogicznie do ether3 hAP.
+4. **cAP ax #1:** kabel ether1 do ether2 hAP, wgrać `3-cap-pietro1.rsc`.
+5. **cAP ax #2:** analogicznie do ether3 hAP, wgrać `3-cap-pietro2.rsc`.
 6. **Klient macOS/iPhone:** import konfiguracji WireGuard z routera.
 7. **Walidacja:** speedtest, hotspot test, izolacja, roaming.
 

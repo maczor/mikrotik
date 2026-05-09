@@ -152,9 +152,10 @@ vi .env                  # ustaw HAP_ETHER1_MAC
 /interface print                         # bridge, vlan-mgmt/priv/cams/guest, ether1-5
 /ip address print                        # 4 adresy 10.20.X.1/24 + WAN dynamic z LTE
 /ip dhcp-server lease print              # gdy podłączysz urządzenia, pokażą się tu
-/interface wifi capsman print            # enabled=yes
+/interface wifi print                    # wifi1/wifi2 powinny być BOUND, nie INACTIVE
+/interface wifi registration-table print # podłączeni klienci (po włączeniu radia)
 /ip hotspot print                        # hotspot-guest active=yes
-/log print where topics~"capsman|hotspot"  # logi
+/log print where topics~"wifi|hotspot"   # logi
 ```
 
 ---
@@ -234,21 +235,18 @@ Dla każdego cAP osobno (najpierw piętro 1, potem piętro 2):
 3. Zasilanie: PoE injektor cAP wpięty w gniazdko + jego port LAN do kabla
 4. Czekaj ~60s
 
-### 5.4. Sprawdzenie na hAP
+### 5.4. Sprawdzenie cAP-a (lokalnie, na samym cAP)
 
-W WinBox hAP → terminal:
-
-```
-/interface wifi capsman remote-cap print
-```
-
-Powinieneś zobaczyć cAP-a jako `running`. Jeśli go nie ma:
+W trybie lokalnym nie ma centralnego kontrolera — każdy cAP weryfikujemy osobno (WinBox po MAC do cAP-a → terminal):
 
 ```
-/log print where topics~"capsman" 
+/interface wifi print                       # wifi1 i wifi2 powinny być BOUND, nie INACTIVE
+/interface wifi registration-table print    # klienci podłączeni do tego cAP-a
+/ip address print                           # vlan-mgmt powinien mieć IP 10.20.10.x z DHCP
+/log print where topics~"wifi"              # ewentualne błędy radia
 ```
 
-i sprawdź co się dzieje (zwykle DHCP na vlan-mgmt nie poszedł — wtedy cAP nie ma IP w 10.20.10.x).
+Jeśli `wifi1`/`wifi2` zostają INACTIVE — sprawdź czy `ssid`, `passphrase` i `ft-mobility-domain=0xa1b2` w configu cAP-a są **identyczne** z hAP (inaczej roaming 802.11r FT nie będzie działał, choć radio może nadawać). Brak IP na vlan-mgmt = problem z trunkiem/DHCP po stronie hAP.
 
 ### 5.5. Powtórz dla drugiego cAP
 
@@ -296,7 +294,7 @@ Idź z telefonem przez budynek. Sygnał powinien przechodzić z AP na AP bez roz
 |---|---|
 | Brak internetu w `Solej-priv` | `/ip address print` na hAP — ether1 ma IP? Jeśli nie, LHG nie przekazuje passthrough — sprawdź MAC w skrypcie LHG |
 | `Solej-Guest` widoczne ale brak captive portal | `/ip hotspot active print` — czy klient się rejestruje? Sprawdź `/ip hotspot host print` |
-| cAP nie pokazuje się w CAPsMAN | Sprawdź `/log print` na cAP — czy dostał IP? Czy na hAP `vlan-mgmt` ma adres 10.20.10.1? |
+| cAP nie nadaje SSID `Solej-priv` | Na samym cAP: `/interface wifi print` — wifi1/wifi2 BOUND czy INACTIVE? `/ip address print` — czy vlan-mgmt ma IP 10.20.10.x? `/log print where topics~"wifi"` — błędy radia. Jeśli INACTIVE: sprawdź czy passphrase i `ft-mobility-domain=0xa1b2` zgadzają się z `.env` |
 | Słaby sygnał LTE (<-100 dBm) | Skieruj antenę dokładniej. Sprawdź band (jeden CA może być słabszy) |
 | Back to Home nie aktywuje | Konto MikroTik niepotwierdzone? Sprawdź mail. Cloud `enabled=yes`? |
 
@@ -307,7 +305,7 @@ Idź z telefonem przez budynek. Sygnał powinien przechodzić z AP na AP bez roz
 Kiedy będziesz chciał:
 
 - **Dokupić kamery WiFi** → włącz SSID Solej-Cams: `/interface wifi configuration enable cfg-cams-2g`
-- **Dodać 3-ci cAP w mesh** → kup cAP ax, zaaplikuj `3-cap-light-config.rsc` z identity `cap-mesh`. Provisioning automatyczny.
+- **Dodać 3-ci cAP w mesh** → kup cAP ax, zaaplikuj `3-cap-light-config.rsc` z identity `cap-mesh`. Pamiętaj: w trybie lokalnym musisz zachować ten sam SSID, passphrase i `ft-mobility-domain=0xa1b2` co reszta — inaczej roaming FT nie zadziała.
 - **Dodać domek przez PtP** → kup parę SXT Lite5 ac, osobny config. To dodatkowy projekt.
 - **Statystyki gości** → User Manager + RADIUS, zamiast trial mode (większa zmiana w hAP config).
 

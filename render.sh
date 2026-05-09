@@ -159,6 +159,7 @@ render_cap() {
     sed \
         -e "s|__PLACEHOLDER_IDENTITY__|$(sed_escape "$identity")|g" \
         -e "s|__PLACEHOLDER_ADMIN_PASSWORD__|$(sed_escape "$admin_pwd")|g" \
+        -e "s|__PLACEHOLDER_PRIV_WIFI_PASSWORD__|$(sed_escape "$PRIV_WIFI_PASSWORD")|g" \
         "$TEMPLATES_DIR/3-cap-light-config.rsc"
 }
 
