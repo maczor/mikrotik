@@ -211,13 +211,13 @@ masquerade out=ether1 (WAN/LTE), src=10.20.0.0/16
 
 ```
 docs/superpowers/specs/2026-05-09-hotel-siec-design.md   ← ten dokument
+README-wdrozenie.md                  ← instrukcja krok po kroku
 configs/
   ├─ 1-lhg-passthrough.rsc          ← LHG LTE18
   ├─ 2-hap-router.rsc               ← hAP ax³ (główny config)
   ├─ 3-cap-light-config.rsc         ← cAP ax (opcjonalny, light)
-  ├─ hotspot/
-  │   └─ login.html                 ← strona logowania PL
-  └─ README-wdrozenie.md            ← instrukcja krok po kroku
+  └─ hotspot/
+      └─ login.html                 ← strona logowania PL
 ```
 
 ---
@@ -234,7 +234,7 @@ configs/
 
 ## 11. Placeholdery do wypełnienia przed importem
 
-Templates `.rsc` mają placeholdery — wypełniane przez `render.sh` z `.env` (patrz `configs/README-wdrozenie.md`):
+Templates `.rsc` mają placeholdery — wypełniane przez `render.sh` z `.env` (patrz `README-wdrozenie.md` w roocie):
 
 - `__PLACEHOLDER_PRIV_WIFI_PASSWORD__` — hasło Solej-priv (min. 12 znaków).
 - `__PLACEHOLDER_CAMS_WIFI_PASSWORD__` — hasło Solej-Cams (włączysz później).
