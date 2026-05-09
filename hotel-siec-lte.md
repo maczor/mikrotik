@@ -10,21 +10,22 @@
 To jest mega zestaw potencjalnie na zawsze.
 Oczywiście nie mamy wpływu na to co nam poda T-mobile ale to wyciągnie max, a nawet więcej bo multiplikuje kanały.
 
+Zakres MVP (zgodnie ze spec `docs/superpowers/specs/2026-05-09-hotel-siec-design.md` sekcja 2 i 10):
+
 1. Antena i modem do 1200 Mb/s
 https://www.mikrotik.org.pl/?produkt,9027
 774,23 zł netto
 2. Router z POE (dla anteny)
 https://www.mikrotik.org.pl/?produkt,9285
 393,09 zł netto
-3. Access point albo repeater - 3 szt. (dwie na piętra jedna do domku)
+3. Access point - 2 szt. (po jednym na piętro)
 https://www.mikrotik.org.pl/?produkt,9570
-357,32 zł netto x 3 = 1071,96
-4. Do domku zestaw
-https://www.mikrotik.org.pl/?produkt,7646
-833,82 zł netto
+357,32 zł netto x 2 = 714,64
 
-Razem
-774,23 + 393,09 + 1071,96 + 833,82 = 3073,10 netto
+Razem MVP
+774,23 + 393,09 + 714,64 = 1881,96 netto
+
+> **Poza zakresem MVP** (do następnej iteracji): 3-ci cAP ax (mesh/repeater bez kabla), para SXT Lite5 ac na most PtP do domku ~100 m. Patrz spec sekcja 10.
 
 ## Schemat sieci
 
@@ -35,9 +36,7 @@ Razem
      │ PoE Ethernet
 [Router — parter/recepcja]
      ├── cAP ax — piętro 1 (kabel)
-     ├── cAP ax — piętro 2 (kabel)
-     ├── cAP ax — mesh/repeater (bez kabla)
-     └── SXT Lite5 ac ──(100m wireless)── SXT Lite5 ac — [Domek]
+     └── cAP ax — piętro 2 (kabel)
 ```
 
 ---
@@ -74,30 +73,7 @@ Razem
 
 ---
 
-### 4. Zasięg w miejscu bez kabla
-**MikroTik cAP ax** (tryb mesh/wireless backhaul)
-- Ten sam model co AP-ki na piętrach
-- CAPsMAN obsługuje wireless uplink natywnie (RouterOS 7.x)
-- Nie wymaga kabla — backhaul przez Wi-Fi od sąsiedniego AP
-- ~300 PLN
-
-> **Alternatywa:** MikroTik wAP ac (~180 PLN) jako prosty repeater
-
----
-
-### 5. Połączenie z domkiem (~100 m)
-**MikroTik SXT Lite5 ac** × 2
-- 5 GHz, point-to-point bridge
-- 100 m to minimalny dystans dla tych anten (działają do 5+ km)
-- Przepustowość efektywna: 100–200 Mb/s
-- Konfiguracja: jeden w trybie AP bridge, drugi Station bridge
-- ~185–200 PLN/szt → **~380 PLN za parę**
-
-> **Alternatywa z wyższym zyskiem:** MikroTik LHG 5 ac × 2 (~250 PLN/szt)
-
----
-
-### 6. Opcjonalnie — Switch PoE
+### 4. Opcjonalnie — Switch PoE
 **MikroTik CRS112-8P-4S-IN** (~400 PLN)
 - Zasila wszystkie AP-ki z jednego miejsca (bez osobnych injektorów)
 - Zarządzany switch — VLAN per port
@@ -106,18 +82,18 @@ Razem
 
 ---
 
-## Zestawienie kosztów
+## Zestawienie kosztów (MVP)
 
 | Element | Model | Cena |
 |---|---|---|
 | Antena LTE zewnętrzna | LHG LTE18 kit | ~550 PLN |
 | Router z Wi-Fi | hAP ax³ | ~400 PLN |
 | cAP ax × 2 (piętra) | cAP ax | ~600 PLN |
-| cAP ax × 1 (mesh) | cAP ax | ~300 PLN |
-| Domek PtP × 2 | SXT Lite5 ac kit | ~380 PLN |
-| **Razem bez switcha** | | **~2 230 PLN** |
+| **Razem bez switcha** | | **~1 550 PLN** |
 | Switch PoE (opcja) | CRS112-8P-4S | +400 PLN |
-| **Razem z switchem** | | **~2 630 PLN** |
+| **Razem z switchem** | | **~1 950 PLN** |
+
+> Pozycje poza zakresem MVP (3-ci cAP ax mesh, para SXT Lite5 ac do domku) — patrz spec sekcja 10.
 
 ---
 

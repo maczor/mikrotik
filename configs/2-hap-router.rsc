@@ -363,11 +363,14 @@
 # (rate-limit "tx/rx" — tx z punktu widzenia routera = upload klienta -> 10M up, 30M down)
 
 # Profil hotspot
+# login-by zawiera https — RouterOS użyje wbudowanego self-signed certa.
+# Browser pokaże ostrzeżenie przy pierwszym logowaniu, ale captive portal zadziała.
+# Aby pozbyć się ostrzeżenia: wgraj cert z trusted CA i ustaw ssl-certificate=<name>.
 :if ([:len [/ip hotspot profile find where name="solej-hs"]] = 0) do={
     /ip hotspot profile add name="solej-hs" \
         hotspot-address=10.20.40.1 \
         dns-name="hotspot.solej.local" \
-        login-by=trial,http-pap \
+        login-by=trial,https,http-pap \
         trial-uptime-limit=7d \
         trial-uptime-reset=7d \
         trial-user-profile=guest \
@@ -417,9 +420,13 @@
 /ip service set api disabled=yes
 /ip service set api-ssl disabled=yes
 /ip service set www-ssl disabled=yes
-# Winbox/SSH tylko z LAN i VPN (firewall i tak filtruje, ale "defense in depth")
-/ip service set winbox disabled=no port=8291
-/ip service set ssh disabled=no port=22
+# Winbox/SSH tylko z LAN (mgmt+priv) i Back-to-Home VPN — defense in depth.
+# Firewall i tak filtruje, ale `address=` to drugi hamulec (np. gdyby filter
+# został przypadkiem wyczyszczony).
+/ip service set winbox disabled=no port=8291 \
+    address=10.20.10.0/24,10.20.20.0/24,192.168.66.0/24
+/ip service set ssh disabled=no port=22 \
+    address=10.20.10.0/24,10.20.20.0/24,192.168.66.0/24
 
 /tool mac-server set allowed-interface-list="MGMT"
 /tool mac-server mac-winbox set allowed-interface-list="MGMT"

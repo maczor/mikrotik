@@ -19,10 +19,9 @@
 ## 1. Wypełnienie zmiennych przez `.env` + `render.sh`
 
 Pliki `.rsc` w katalogu `configs/` to **templates** z placeholderami `__PLACEHOLDER_*__`.
-Nie edytuj ich ręcznie. Zamiast tego:
+Nie edytuj ich ręcznie. Zamiast tego — z **roota projektu** (gdzie leży `render.sh` i `.env.example`):
 
 ```bash
-cd configs/
 cp .env.example .env
 chmod 600 .env                      # ważne - zawiera hasła
 vi .env                             # wypełnij wartości

@@ -66,26 +66,42 @@ REQUIRED_VARS=(
 )
 
 # --- 3. Walidacja ------------------------------------------------------------
+# Uwaga: pod `set -e` `((errors++))` wyjdzie ze skryptu gdy errors=0
+# (post-increment zwraca 0 → exit status 1). Dlatego errors=$((errors+1)).
 errors=0
 for var in "${REQUIRED_VARS[@]}"; do
     val="${!var:-}"
     if [[ -z "$val" ]]; then
         echo "BŁĄD: zmienna $var jest pusta" >&2
-        ((errors++))
+        errors=$((errors+1))
     elif [[ "$val" == zmien-mnie* ]]; then
         echo "BŁĄD: zmienna $var nie została zmieniona z domyślnej wartości" >&2
-        ((errors++))
+        errors=$((errors+1))
     fi
 done
 
 # Specyficzna walidacja: MAC format
 if [[ ! "$HAP_ETHER1_MAC" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]]; then
     echo "BŁĄD: HAP_ETHER1_MAC ($HAP_ETHER1_MAC) nie jest poprawnym MAC-iem (AA:BB:CC:DD:EE:FF)" >&2
-    ((errors++))
+    errors=$((errors+1))
 fi
 
-# Hasła min. długości
+# APN nie może zawierać białych znaków (zepsuje syntax .rsc)
+if [[ "$APN" =~ [[:space:]] ]]; then
+    echo "BŁĄD: APN ($APN) zawiera białe znaki" >&2
+    errors=$((errors+1))
+fi
+
+# Hasła admina min. długości (twardy próg)
 for var in LHG_ADMIN_PASSWORD HAP_ADMIN_PASSWORD CAP1_ADMIN_PASSWORD CAP2_ADMIN_PASSWORD; do
+    val="${!var:-}"
+    if [[ ${#val} -lt 12 ]]; then
+        echo "OSTRZEŻENIE: $var krótsze niż 12 znaków (${#val})" >&2
+    fi
+done
+
+# Hasła WiFi min. długości (WPA2-PSK wymaga 8, my chcemy 12)
+for var in PRIV_WIFI_PASSWORD CAMS_WIFI_PASSWORD; do
     val="${!var:-}"
     if [[ ${#val} -lt 12 ]]; then
         echo "OSTRZEŻENIE: $var krótsze niż 12 znaków (${#val})" >&2
@@ -99,35 +115,43 @@ if [[ $errors -gt 0 ]]; then
 fi
 
 if [[ $CHECK_ONLY -eq 1 ]]; then
-    echo "OK: .env wygląda poprawnie ($((${#REQUIRED_VARS[@]})) zmiennych)."
+    echo "OK: .env wygląda poprawnie (${#REQUIRED_VARS[@]} zmiennych)."
     exit 0
 fi
 
 # --- 4. Generuj pliki --------------------------------------------------------
 mkdir -p "$OUT_DIR"
+chmod 700 "$OUT_DIR"
+
+# Escape znaków specjalnych dla replacement-stringa sed: \, &, |
+# (| jest naszym delimiterem; \ i & mają znaczenie w replacement-stringu).
+# Bez tego hasło zawierające np. '|' rozjedzie składnię sed.
+sed_escape() {
+    printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'
+}
 
 # Mapowanie placeholderów do zmiennych. Każdy template-specific.
 render_lhg() {
     sed \
-        -e "s|__PLACEHOLDER_ADMIN_PASSWORD__|${LHG_ADMIN_PASSWORD}|g" \
-        -e "s|__PLACEHOLDER_HAP_ETHER1_MAC__|${HAP_ETHER1_MAC}|g" \
-        -e "s|__PLACEHOLDER_APN__|${APN}|g" \
+        -e "s|__PLACEHOLDER_ADMIN_PASSWORD__|$(sed_escape "$LHG_ADMIN_PASSWORD")|g" \
+        -e "s|__PLACEHOLDER_HAP_ETHER1_MAC__|$(sed_escape "$HAP_ETHER1_MAC")|g" \
+        -e "s|__PLACEHOLDER_APN__|$(sed_escape "$APN")|g" \
         "$TEMPLATES_DIR/1-lhg-passthrough.rsc"
 }
 
 render_hap() {
     sed \
-        -e "s|__PLACEHOLDER_ADMIN_PASSWORD__|${HAP_ADMIN_PASSWORD}|g" \
-        -e "s|__PLACEHOLDER_PRIV_WIFI_PASSWORD__|${PRIV_WIFI_PASSWORD}|g" \
-        -e "s|__PLACEHOLDER_CAMS_WIFI_PASSWORD__|${CAMS_WIFI_PASSWORD}|g" \
+        -e "s|__PLACEHOLDER_ADMIN_PASSWORD__|$(sed_escape "$HAP_ADMIN_PASSWORD")|g" \
+        -e "s|__PLACEHOLDER_PRIV_WIFI_PASSWORD__|$(sed_escape "$PRIV_WIFI_PASSWORD")|g" \
+        -e "s|__PLACEHOLDER_CAMS_WIFI_PASSWORD__|$(sed_escape "$CAMS_WIFI_PASSWORD")|g" \
         "$TEMPLATES_DIR/2-hap-router.rsc"
 }
 
 render_cap() {
     local identity="$1" admin_pwd="$2"
     sed \
-        -e "s|__PLACEHOLDER_IDENTITY__|${identity}|g" \
-        -e "s|__PLACEHOLDER_ADMIN_PASSWORD__|${admin_pwd}|g" \
+        -e "s|__PLACEHOLDER_IDENTITY__|$(sed_escape "$identity")|g" \
+        -e "s|__PLACEHOLDER_ADMIN_PASSWORD__|$(sed_escape "$admin_pwd")|g" \
         "$TEMPLATES_DIR/3-cap-light-config.rsc"
 }
 

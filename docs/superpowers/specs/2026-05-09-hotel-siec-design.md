@@ -234,7 +234,11 @@ configs/
 
 ## 11. Placeholdery do wypełnienia przed importem
 
+Templates `.rsc` mają placeholdery — wypełniane przez `render.sh` z `.env` (patrz `configs/README-wdrozenie.md`):
+
 - `__PLACEHOLDER_PRIV_WIFI_PASSWORD__` — hasło Solej-priv (min. 12 znaków).
 - `__PLACEHOLDER_CAMS_WIFI_PASSWORD__` — hasło Solej-Cams (włączysz później).
 - `__PLACEHOLDER_ADMIN_PASSWORD__` — hasło admina routera (każde urządzenie ma własne).
-- `__PLACEHOLDER_HOTEL_NAME__` — w hotspot login.html (domyślnie "Solej").
+- `__PLACEHOLDER_HAP_ETHER1_MAC__` — MAC ether1 hAP (do trybu passthrough LHG).
+- `__PLACEHOLDER_APN__` — APN operatora LTE.
+- `__PLACEHOLDER_IDENTITY__` — identity cAP-a (np. `cap-pietro1`).
