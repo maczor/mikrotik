@@ -251,7 +251,9 @@
 /ip firewall filter add chain=input action=accept protocol=icmp limit=10,5:packet \
     comment="solej-mgr: icmp"
 /ip firewall filter add chain=input action=accept in-interface-list=MGMT \
-    comment="solej-mgr: admin tylko z mgmt VLAN"
+    comment="solej-mgr: admin z mgmt VLAN"
+/ip firewall filter add chain=input action=accept src-address=10.20.0.0/16 \
+    comment="solej-mgr: admin z sieci hotelowej (priv, cams, mgmt)"
 /ip firewall filter add chain=input action=drop comment="solej-mgr: drop everything else"
 
 # === 14. Hardening ==========================================================
