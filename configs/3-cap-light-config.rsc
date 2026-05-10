@@ -246,7 +246,10 @@
 # cAP jest AP-em za hAP-em. hAP pilnuje granicy z internetem. cAP chroni tylko
 # przed ruchem z sieci hotelowej do samego siebie — czyli praktycznie nic nie
 # blokujemy poza invalid i ewentualnym ruchem spoza 10.20.0.0/16.
-/ip firewall filter remove [find where comment~"solej-mgr"]
+# Usuwamy WSZYSTKIE reguły input (nasze + defconf) — defconf po button resecie
+# zostawia `accept in-interface=bridge` który po naszym imporcie nie matchuje
+# ruchu z vlan-mgmt i wszystko leci na defconf drop.
+/ip firewall filter remove [find where chain=input]
 /ip firewall filter add chain=input action=accept connection-state=established,related,untracked \
     comment="solej-mgr: established"
 /ip firewall filter add chain=input action=drop connection-state=invalid \
