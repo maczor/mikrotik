@@ -64,8 +64,10 @@
 }
 
 # === 3. Bridge ports ========================================================
-# ether1 = uplink trunk do hAP (mgmt VLAN 10 native, reszta tagged)
-# ether2 = access VLAN 20 opcjonalnie (np. TV/PS5 w pokoju)
+# Daisy-chain: hAP → cAP-pietro1 → cAP-pietro2.
+# Oba porty fizyczne to TRUNKI (mgmt VLAN 10 native, reszta tagged):
+# - ether1 = uplink (do hAP albo do cAP wyżej w łańcuchu)
+# - ether2 = downlink (do następnego cAP w łańcuchu, NIEUŻYWANE na ostatnim)
 # wifi1/wifi2 są dynamicznie dodawane do bridge przez datapath= w cfg-*.
 :foreach iface in={"ether1";"ether2"} do={
     :foreach bp in=[/interface bridge port find where interface=$iface] do={
@@ -74,24 +76,34 @@
 }
 /interface bridge port add bridge=bridge interface=ether1 pvid=10 \
     comment="solej-mgr: trunk uplink (mgmt VLAN 10 native)"
-/interface bridge port add bridge=bridge interface=ether2 pvid=20 \
-    frame-types=admit-only-untagged-and-priority-tagged \
-    comment="solej-mgr: access VLAN 20 -> TV/PS5 w pokoju"
+/interface bridge port add bridge=bridge interface=ether2 pvid=10 \
+    comment="solej-mgr: trunk downlink (do następnego cAP)"
 
 # === 4. Bridge VLAN table ===================================================
 /interface bridge vlan remove [find where comment~"solej-mgr"]
 /interface bridge vlan add bridge=bridge vlan-ids=10 \
-    tagged=bridge untagged=ether1 \
-    comment="solej-mgr: VLAN 10 mgmt native"
+    tagged=bridge untagged=ether1,ether2 \
+    comment="solej-mgr: VLAN 10 mgmt native (oba trunki)"
 /interface bridge vlan add bridge=bridge vlan-ids=20 \
-    tagged=bridge,ether1 untagged=ether2 \
+    tagged=bridge,ether1,ether2 \
     comment="solej-mgr: VLAN 20 priv"
 /interface bridge vlan add bridge=bridge vlan-ids=30 \
-    tagged=bridge,ether1 \
+    tagged=bridge,ether1,ether2 \
     comment="solej-mgr: VLAN 30 cams"
 /interface bridge vlan add bridge=bridge vlan-ids=40 \
-    tagged=bridge,ether1 \
+    tagged=bridge,ether1,ether2 \
     comment="solej-mgr: VLAN 40 guest"
+
+# === 4.5. PoE-out na ether2 (zasilanie kolejnego cAP w łańcuchu) ===========
+# cAP ax (D52iG-5HaxD2HaxD) ma PoE-out na ether2 do 802.3at (25W).
+# Drugi cAP ax ciągnie ~7W, więc spokojnie się zmieści.
+# Ostatni cAP w łańcuchu nadal włączy PoE-out — auto-detection nie wyśle
+# prądu jeśli nie wykryje 802.3at klienta, więc bezpiecznie.
+:do {
+    /interface ethernet poe set ether2 poe-out=auto-on
+} on-error={
+    :log warning "cAP-Solej: PoE-out na ether2 nie obsługiwane, pomijam"
+}
 
 # === 5. VLAN interface dla mgmt (żeby cAP dostał IP z hAP) =================
 :if ([:len [/interface vlan find where name="vlan-mgmt"]] = 0) do={
