@@ -83,24 +83,59 @@ PUŁAPKA: `set wifi1 configuration.ssid=""` (z pustym stringiem) ustawia overrid
 na pusty SSID — radio pokaże `SSID not set`. Trzeba `!.ssid` żeby USUNĄĆ
 override i pozwolić cfg-priv-5g zadziałać.
 
-### 4. Master radia NIE są auto-dodawane do bridge
+### 4. Master radia: datapath SAM zarządza bridge port jako Dynamic
 
-`datapath.bridge=bridge .vlan-id=20` w configuration NIE wystarcza. Master
-radia (wifi1, wifi2) trzeba dodać do `/interface bridge port` JAWNIE:
+PIERWOTNIE myśleliśmy że trzeba master radia (wifi1, wifi2) dodawać statycznie
+do `/interface bridge port`. Empiryczny test (10 maja 2026) udowodnił że jest
+ODWROTNIE: datapath wifi-qcom z `datapath.bridge=bridge .vlan-id=20` SAM dodaje
+master radio jako Dynamic bridge port po `enable`. Statyczny `/interface bridge
+port add` BLOKUJE dynamiczny i ramki nie idą prawidłowo:
+
+- klient asocjuje (widoczny w `wifi registration-table`)
+- bridge host table widzi MAC klienta na wifi1 z VID=20 (poprawnie)
+- DHCP serwer otrzymuje DISCOVER, wysyła OFFER (pojawia się lease w stanie 'offered')
+- ALE klient nie odpowiada DHCPREQUEST (lease NIGDY nie staje się 'bound')
+
+Naprawa: NIE dodawaj statycznie wifi1/wifi2 do bridge port. Czyść ewentualne
+defconf wpisy i pozwól datapath dodać dynamicznie:
 
 ```routeros
-/interface bridge port add bridge=bridge interface=wifi1 pvid=20 frame-types=admit-all
-/interface bridge port add bridge=bridge interface=wifi2 pvid=20 frame-types=admit-all
+:foreach iface in={"wifi1";"wifi2"} do={
+    :foreach bp in=[/interface bridge port find where interface=$iface] do={
+        /interface bridge port remove $bp
+    }
+}
+# (nie ma `add` po tym — datapath sam dorobi)
 ```
 
-Slaves (wifi1-guest, wifi2-guest) datapath dodaje samodzielnie jako DYNAMIC.
+Slaves (wifi1-guest, wifi2-guest) tak samo — datapath dodaje sam.
 
 PUŁAPKI:
-- `frame-types=admit-only-untagged-and-priority-tagged` na master → dropuje
-  ramki bo datapath taguje VLAN przed bridge'em. Trzeba `admit-all`.
 - `master-interface!=""` jako filter w cleanup (`/interface wifi find where ...`)
   matchuje też master radia, próba remove → `failure: not allowed to remove`.
   Filtruj po nazwach: `find where name="wifi1-guest"`.
+
+### 4a. Defconf DHCP server konkuruje z dhcp-priv
+
+Po fabrycznym resecie hAP defconf zawiera:
+- `/ip address 192.168.88.1/24 interface=bridge`
+- `/ip dhcp-server "defconf" interface=bridge`
+- pool `default-dhcp` 192.168.88.10-254
+- DHCP network 192.168.88.0/24
+
+Skrypt który NIE usuwa defconf na początku zostawia ten DHCP serwer aktywny
+na bridge. Klient wifi w VLAN 20 dostaje DWA DHCP OFFERs (jeden 192.168.88.x
+z defconf, drugi 10.20.20.x z dhcp-priv) — gubi się, lease pozostaje 'offered'.
+
+Naprawa: cleanup defconf NA POCZĄTKU skryptu, przed bridge:
+
+```routeros
+/ip dhcp-server remove [find where name="defconf"]
+/ip dhcp-server network remove [find where comment="defconf"]
+/ip pool remove [find where name="default-dhcp"]
+/ip address remove [find where comment="defconf"]
+/ip dns static remove [find where comment="defconf"]
+```
 
 ### 5. `set disabled=no` ≠ `enable`
 

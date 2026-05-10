@@ -35,6 +35,22 @@
 /system note set show-at-login=no note=""
 /user set [find name="admin"] password="__PLACEHOLDER_ADMIN_PASSWORD__"
 
+# === 1.5. Cleanup defconf hAP ===============================================
+# Defconf hAP po fabrycznym resecie ma:
+# - /ip address 192.168.88.1/24 na bridge
+# - /ip dhcp-server "defconf" interface=bridge pool=default-dhcp
+# - /ip dhcp-server network 192.168.88.0/24
+# - /ip pool default-dhcp 192.168.88.10-254
+# - /ip dns static router.lan -> 192.168.88.1
+# To koliduje z naszym dhcp-priv (klient wifi w VLAN 20 dostaje dwie OFFER:
+# defconf 192.168.88.x i dhcp-priv 10.20.20.x — gubi się, lease zostaje
+# w stanie 'offered' nigdy nie 'bound'). Czyścimy ZANIM przejdziemy dalej.
+/ip dhcp-server remove [find where name="defconf"]
+/ip dhcp-server network remove [find where comment="defconf"]
+/ip pool remove [find where name="default-dhcp"]
+/ip address remove [find where comment="defconf"]
+/ip dns static remove [find where comment="defconf"]
+
 # === 2. Bridge główny (vlan-filtering = na razie OFF) =======================
 :if ([:len [/interface bridge find where name="bridge"]] = 0) do={
     /interface bridge add name="bridge" \
@@ -51,7 +67,7 @@
 # Czyścimy WSZYSTKIE porty z DOWOLNEGO bridge'a (default config / poprzedni import).
 # To jest agresywne ale konieczne — w przeciwnym razie `add` wywala się gdy port
 # jest już w innym bridge.
-:foreach iface in={"ether2";"ether3";"ether4";"ether5"} do={
+:foreach iface in={"ether2";"ether3";"ether4";"ether5";"wifi1";"wifi2"} do={
     :foreach bp in=[/interface bridge port find where interface=$iface] do={
         /interface bridge port remove $bp
     }
@@ -383,20 +399,20 @@
         comment="Solej-Guest 2.4G (slave wifi2)"
 }
 
-# Master radia jako bridge port (datapath SAM auto-dodaje slaves, ale NIE
-# auto-dodaje master fizycznych w 7.20.8). Bez tego DHCP/ruch z klientów
-# Solej-priv nie wpada do bridge, mimo że radio nadaje i klienci asocjują.
-# UWAGA: frame-types=admit-all (NIE admit-only-untagged) — datapath taguje
-# ramki vlan-id=20 przed bridge, admit-only-untagged by je dropowało.
+# Master radia: datapath wifi-qcom SAM zarządza bridge port jako Dynamic
+# (po `enable` master radia datapath dodaje wifi1/wifi2 do bridge z PVID
+# matchującym datapath.vlan-id). NIE dodawajemy statycznie — statyczny wpis
+# blokuje dynamiczny i ramki nie idą prawidłowo (potwierdzone empirycznie:
+# defconf wifi1/wifi2 jako bridge port z PVID=1 admit-all dropuje ruch
+# z VLAN 20 → wifi klient asocjuje, dostaje DHCP OFFER, ale REQUEST nie
+# wraca → lease w stanie 'offered' nigdy nie staje się 'bound').
+# Czyścimy wszelkie statyczne wpisy wifi1/wifi2 z bridge port (defconf
+# albo z poprzednich importów — sami nie dodajemy).
 :foreach iface in={"wifi1";"wifi2"} do={
     :foreach bp in=[/interface bridge port find where interface=$iface] do={
         /interface bridge port remove $bp
     }
 }
-/interface bridge port add bridge=bridge interface=wifi1 pvid=20 frame-types=admit-all \
-    comment="solej-mgr: wifi1 master Solej-priv VLAN 20"
-/interface bridge port add bridge=bridge interface=wifi2 pvid=20 frame-types=admit-all \
-    comment="solej-mgr: wifi2 master Solej-priv VLAN 20"
 
 # Po zakupie kamer wifi: usuń `disabled=yes` z cfg-cams-2g (sekcja 19)
 # i dodaj slave:
