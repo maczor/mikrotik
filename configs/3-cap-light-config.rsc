@@ -160,6 +160,8 @@
         !configuration.ssid !configuration.mode \
         !security.passphrase !security.authentication-types \
         !security.ft !security.ft-over-ds
+    # 2.4GHz w 7.20.8: jawny kanał 6 + 20MHz (auto-channel zawodzi).
+    /interface wifi set wifi1 channel.frequency=2437 channel.width=20mhz
 }
 :if ([:len [/interface wifi find where name="wifi2"]] > 0) do={
     /interface wifi set wifi2 configuration=cfg-priv-5g configuration.manager=local
@@ -198,6 +200,11 @@
 
 # Włączenie wszystkich radii. UWAGA 7.20.8: `set disabled=no` ustawia property,
 # ale radio zostaje BOUND a nie RUNNING. Dopiero `enable` faktycznie podnosi.
+# Disable→delay→enable cycle wymusza pełną tranzycję stanu.
+:foreach w in=[/interface wifi find] do={
+    /interface wifi disable $w
+}
+:delay 2s
 :foreach w in=[/interface wifi find] do={
     /interface wifi enable $w
 }

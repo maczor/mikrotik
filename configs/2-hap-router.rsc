@@ -363,6 +363,12 @@
         !configuration.ssid !configuration.mode \
         !security.passphrase !security.authentication-types \
         !security.ft !security.ft-over-ds
+    # 2.4GHz w 7.20.8 wifi-qcom: auto-channel selection przy country=Poland
+    # często skutkuje brakiem startu radia. Wymuszamy jawny kanał 6 (2437MHz)
+    # i 20MHz width — to najprostszy konfig, później można eksperymentować
+    # z 40MHz/auto. Empirycznie sprawdzone: bez tego radio zostaje BOUND
+    # i nie nadaje, mimo że wifi1 (5GHz) startuje OK.
+    /interface wifi set wifi2 channel.frequency=2437 channel.width=20mhz
 }
 
 # Slave virtual-AP: Solej-Guest na obu pasmach
@@ -402,6 +408,14 @@
 # imporcie `set disabled=no` ustawia property, ale radio zostaje BOUND a nie
 # RUNNING — nie nadaje. Dopiero `enable` faktycznie podnosi radio. 5GHz po
 # enable wchodzi w DFS check (~1 minuta), 2.4GHz startuje natychmiast.
+#
+# Dodatkowo robimy disable→delay→enable cycle, żeby wymusić pełną tranzycję
+# stanu po wcześniejszych ustawieniach configuration/manager. Bez tego cyklu
+# radia czasem zostają w stanie BOUND-bez-RUNNING (znany quirk wifi-qcom).
+:foreach w in=[/interface wifi find] do={
+    /interface wifi disable $w
+}
+:delay 2s
 :foreach w in=[/interface wifi find] do={
     /interface wifi enable $w
 }
