@@ -21,8 +21,8 @@
 #   /import file-name=1-lhg-passthrough.rsc verbose=yes
 #
 # WERYFIKACJA PO IMPORCIE:
-#   /interface lte info [find] once
-#   -> status: registered, signal: lepiej niż -90 dBm
+#   /interface lte monitor [find] once
+#   -> status: running, signal RSRP > -90 dBm, SINR > 5 dB
 #   /interface lte print
 #   -> running=true
 # =============================================================================
@@ -141,4 +141,4 @@
 }
 
 :log info "LHG-Solej: konfiguracja zakończona"
-:put "OK. LHG: skieruj antenę na BTS, potem na hAP: /interface lte info once"
+:put "OK. LHG: skieruj antenę na BTS, sprawdź sygnał: /interface lte monitor [find] once"
