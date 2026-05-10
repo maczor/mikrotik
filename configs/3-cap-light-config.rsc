@@ -242,21 +242,13 @@
     /interface list member add list="MGMT" interface=vlan-mgmt
 }
 
-# === 13. Firewall (cAP nie routuje, nie ma WAN-u — minimalny input) ========
-# cAP jest AP-em za hAP-em. hAP pilnuje granicy z internetem. cAP chroni tylko
-# przed ruchem z sieci hotelowej do samego siebie — czyli praktycznie nic nie
-# blokujemy poza invalid i ewentualnym ruchem spoza 10.20.0.0/16.
-# Usuwamy WSZYSTKIE reguły input (nasze + defconf) — defconf po button resecie
-# zostawia `accept in-interface=bridge` który po naszym imporcie nie matchuje
-# ruchu z vlan-mgmt i wszystko leci na defconf drop.
+# === 13. Firewall (cAP) =====================================================
+# cAP jest AP-em wewnętrznym za hAP-em. hAP robi perimeter security.
+# Input firewall na cAP generował problemy z zarządzaniem (TCP blokowany mimo
+# działającego pinga) — usuwamy wszystkie reguły, zostawiamy tylko drop invalid.
 /ip firewall filter remove [find where chain=input]
-/ip firewall filter add chain=input action=accept connection-state=established,related,untracked \
-    comment="solej-mgr: established"
 /ip firewall filter add chain=input action=drop connection-state=invalid \
     comment="solej-mgr: invalid"
-/ip firewall filter add chain=input action=accept src-address=10.20.0.0/16 \
-    comment="solej-mgr: cała sieć hotelowa (mgmt/priv/cams/guest)"
-/ip firewall filter add chain=input action=drop comment="solej-mgr: drop spoza sieci hotelowej"
 
 # === 14. Hardening ==========================================================
 /ip service set telnet disabled=yes
