@@ -39,6 +39,24 @@
 /system clock set time-zone-name=Europe/Warsaw
 /user set [find name="admin"] password="__PLACEHOLDER_ADMIN_PASSWORD__"
 
+# === 1.5. Cleanup defconf cAP ===============================================
+# Defconf cAP po fabrycznym resecie ma:
+# - /ip address 192.168.88.1/24 na bridge
+# - /ip dhcp-client na ether1 (cAP fabrycznie próbuje wziąć IP od uplinka,
+#   konflikt z naszym dhcp-client na vlan-mgmt później)
+# - /ip dns static router.lan
+# - bridge port wifi1/wifi2 z PVID=1 admit-all (blokuje datapath wifi-qcom
+#   tak samo jak na hAP)
+# Czyścimy ZANIM przejdziemy do bridge/VLAN/wifi.
+/ip address remove [find where comment="defconf"]
+/ip dhcp-client remove [find]
+/ip dns static remove [find where comment="defconf"]
+:foreach iface in={"wifi1";"wifi2"} do={
+    :foreach bp in=[/interface bridge port find where interface=$iface] do={
+        /interface bridge port remove $bp
+    }
+}
+
 # === 2. Bridge główny (vlan-filtering=OFF na czas konfiguracji) =============
 :if ([:len [/interface bridge find where name="bridge"]] = 0) do={
     /interface bridge add name="bridge" vlan-filtering=no \
