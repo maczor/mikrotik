@@ -1,7 +1,7 @@
 # =============================================================================
 # LHG LTE18 — Solej Hotel
 # Rola: modem LTE w trybie passthrough (bez routingu, IP idzie do hAP)
-# RouterOS: 7.21.4+
+# RouterOS: 7.20.8+
 #
 # PRZED IMPORTEM:
 #   1. Reset to defaults BEZ default config (System -> Reset Configuration ->
@@ -9,7 +9,7 @@
 #   2. Włóż kartę SIM (T-Mobile).
 #   3. Podłącz LHG przez kabel ethernet do laptopa (zasilanie z PoE injectora
 #      LHG lub tymczasowo hAP).
-#   4. WinBox po MAC. Zaktualizuj firmware do RouterOS 7.21.4 + RouterBOOT.
+#   4. WinBox po MAC. Zaktualizuj firmware do RouterOS 7.20.8 + RouterBOOT.
 #   5. Otwórz ten plik w edytorze i podmień placeholdery:
 #        __PLACEHOLDER_ADMIN_PASSWORD__   -> hasło admina (min. 16 znaków)
 #        __PLACEHOLDER_HAP_ETHER1_MAC__   -> MAC adres ether1 hAP ax3

@@ -1,12 +1,12 @@
 # =============================================================================
 # hAP ax3 — Solej Hotel (router główny)
 # Rola: router LTE + DHCP + DNS + firewall + lokalne wifi (parter) + hotspot + VPN
-# RouterOS: 7.21.4+
+# RouterOS: 7.20.8+
 #
 # PRZED IMPORTEM:
 #   1. Reset to defaults BEZ default config (System -> Reset Configuration ->
 #      "No Default Configuration").
-#   2. Update firmware do 7.21.4 + RouterBOOT.
+#   2. Update firmware do 7.20.8 + RouterBOOT.
 #   3. Wgraj plik hotspot/login.html do Files (drag & drop) PRZED importem
 #      (skrypt do niego się odwołuje).
 #   4. Podmień placeholdery:
