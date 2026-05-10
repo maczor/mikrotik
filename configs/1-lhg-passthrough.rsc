@@ -37,18 +37,20 @@
 # --- Hasło admina -------------------------------------------------------------
 /user set [find name="admin"] password="__PLACEHOLDER_ADMIN_PASSWORD__"
 
-# --- APN ----------------------------------------------------------------------
-:if ([:len [/interface lte apn find where name="solej-apn"]] = 0) do={
-    /interface lte apn add name="solej-apn" apn="__PLACEHOLDER_APN__" use-peer-dns=yes
-}
-
-# --- LTE: passthrough mode ----------------------------------------------------
+# --- APN + LTE passthrough ----------------------------------------------------
+# UWAGA w 7.20.8: passthrough-interface/passthrough-mac są atrybutami
+# APN PROFILU, nie /interface lte (jak w starszych wydaniach RouterOS).
 # Modem oddaje publiczne IP od operatora prosto na ether1, do MAC hAP.
 # Bez double-NAT, bez routingu na LHG.
-/interface lte set [find] \
-    apn-profiles="solej-apn" \
-    passthrough-interface=ether1 \
-    passthrough-mac="__PLACEHOLDER_HAP_ETHER1_MAC__"
+:if ([:len [/interface lte apn find where name="solej-apn"]] = 0) do={
+    /interface lte apn add name="solej-apn" apn="__PLACEHOLDER_APN__" \
+        use-peer-dns=yes \
+        passthrough-interface=ether1 \
+        passthrough-mac="__PLACEHOLDER_HAP_ETHER1_MAC__"
+}
+
+# Aktywuj profil "solej-apn" na modemie
+/interface lte set [find] apn-profiles="solej-apn"
 
 # --- Lokalny IP na ether1 -----------------------------------------------------
 # UWAGA: w trybie LTE passthrough ramki idą bezpośrednio do MAC hAP (omijają stos IP).
@@ -124,7 +126,10 @@
 /ip neighbor discovery-settings set discover-interface-list="mgmt"
 /tool bandwidth-server set enabled=no
 /tool romon set enabled=no
-/ip cloud set ddns-enabled=no update-time=no
+# UWAGA w 7.20.8: /ip cloud nie przyjmuje ddns-enabled=no/disable/disabled —
+# tylko `auto` (default) lub `yes`. Na LHG bez SIM cloud i tak nie wstanie,
+# więc `auto` jest funkcjonalnie OK. Wyłączamy tylko update-time.
+/ip cloud set update-time=no
 
 # --- LED na panelu LHG: pokazuj LTE signal ------------------------------------
 # (działa na LHG LTE6/LTE18 — pokazuje siłę sygnału na LED)

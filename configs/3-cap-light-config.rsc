@@ -223,7 +223,9 @@
 /tool bandwidth-server set enabled=no
 /tool romon set enabled=no
 /ipv6 settings set disable-ipv6=yes
-/ip cloud set ddns-enabled=no
+# UWAGA 7.20.8: ddns-enabled przyjmuje tylko auto/yes (nie no). cAP nie ma
+# WAN-u więc cloud i tak nie wstanie — auto jest funkcjonalnie wyłączeniem.
+/ip cloud set update-time=no
 
 :log info "cAP-Solej: konfiguracja zakończona"
 :put "OK. Sprawdź: /interface wifi print (wifi* powinny być B, nie BI)"
