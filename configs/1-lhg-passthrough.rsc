@@ -37,6 +37,18 @@
 # --- Hasło admina -------------------------------------------------------------
 /user set [find name="admin"] password="__PLACEHOLDER_ADMIN_PASSWORD__"
 
+# --- Cleanup defconf LHG -----------------------------------------------------
+# LHG po fabrycznym resecie ma defconf: IP 192.168.188.1/24 + DHCP server
+# `defconf` + pool `default-dhcp` + DHCP network 192.168.188.0/24 — wszystko
+# na ether1. To koliduje z passthrough — LHG defconf DHCP odpowiada hAP-owi
+# zamiast pchnąć publiczne IP z LTE. Empirycznie potwierdzone na 7.20.8:
+# passthrough nie nadpisuje defconf, koegzystują, defconf wygrywa pierwszy.
+# Czyścimy ZANIM przejdziemy do APN/passthrough.
+/ip dhcp-server remove [find where name="defconf"]
+/ip dhcp-server network remove [find where comment="defconf"]
+/ip pool remove [find where name="default-dhcp"]
+/ip address remove [find where comment="defconf"]
+
 # --- APN profile (passthrough zdefiniowany, ALE jeszcze nie aktywowany) -----
 # UWAGA w 7.20.8: passthrough-interface/passthrough-mac są atrybutami
 # APN PROFILU, nie /interface lte (jak w starszych wydaniach RouterOS).
