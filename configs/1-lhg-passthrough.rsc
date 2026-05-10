@@ -37,11 +37,15 @@
 # --- Hasło admina -------------------------------------------------------------
 /user set [find name="admin"] password="__PLACEHOLDER_ADMIN_PASSWORD__"
 
-# --- APN + LTE passthrough ----------------------------------------------------
+# --- APN profile (passthrough zdefiniowany, ALE jeszcze nie aktywowany) -----
 # UWAGA w 7.20.8: passthrough-interface/passthrough-mac są atrybutami
 # APN PROFILU, nie /interface lte (jak w starszych wydaniach RouterOS).
 # Modem oddaje publiczne IP od operatora prosto na ether1, do MAC hAP.
 # Bez double-NAT, bez routingu na LHG.
+#
+# UWAGA #2: aktywację `apn-profiles=solej-apn` robimy DOPIERO NA KOŃCU
+# skryptu (sekcja "Aktywacja LTE passthrough"). Przedwczesna aktywacja
+# odcięłaby MAC-Winbox z laptopa zanim firewall/hardening dolecą.
 :if ([:len [/interface lte apn find where name="solej-apn"]] = 0) do={
     /interface lte apn add name="solej-apn" apn="__PLACEHOLDER_APN__" \
         use-peer-dns=yes \
@@ -49,37 +53,25 @@
         passthrough-mac="__PLACEHOLDER_HAP_ETHER1_MAC__"
 }
 
-# Aktywuj profil "solej-apn" na modemie
-/interface lte set [find] apn-profiles="solej-apn"
+# --- LTE passthrough = LHG nie ma własnego IP -------------------------------
+# W trybie passthrough LHG przekazuje publiczne IP od operatora bezpośrednio
+# do MAC hAP-a przez ether1. LHG SAM nie ma żadnego IP — zarządzanie odbywa
+# się WYŁĄCZNIE przez MAC-Winbox po ether1.
+#
+# Dlaczego nie ma service-mode IP (192.168.99.1/24 + DHCP):
+# Próbowaliśmy. W 7.20.8 jednoczesny passthrough + service-IP/DHCP na ether1
+# powoduje konflikt — passthrough wygrywa losowo, service-mode dropuje ramki
+# z obcego MAC-a (laptop), a MAC-Winbox traci synchronizację. Efekt: po
+# pierwszym aktywowaniu passthrough laptop traci dostęp i jedynym ratunkiem
+# jest reset przyciskiem.
+#
+# Service mode (laptop bezpośrednio do LHG): podłącz laptop, połącz po
+# MAC-Winbox (Neighbors → klik MAC LHG, bez IP), pracuj. Jak chcesz IP —
+# tymczasowo dodaj sobie ręcznie:
+#   /ip address add address=192.168.99.1/24 interface=ether1
+# i zdejmij po skończeniu serwisu.
 
-# --- Lokalny IP na ether1 -----------------------------------------------------
-# UWAGA: w trybie LTE passthrough ramki idą bezpośrednio do MAC hAP (omijają stos IP).
-# Ten lokalny IP/DHCP/firewall działa TYLKO gdy LHG jest podpięty bezpośrednio do
-# laptopa (kabel serwisowy, hAP odłączony). Gdy LHG jedzie w trybie produkcyjnym
-# (passthrough do hAP), te wpisy są niefunkcjonalne — to OK, zostają jako
-# "service mode access", aktywują się gdy odepniesz hAP.
-# 192.168.99.0/24 nie koliduje z 10.20.x.x sieci hotelu.
-:if ([:len [/ip address find where address="192.168.99.1/24"]] = 0) do={
-    /ip address add address=192.168.99.1/24 interface=ether1 comment="solej-mgr: LHG service LAN"
-}
-
-# DHCP dla serwisowego laptopa
-:if ([:len [/ip pool find where name="lhg-service"]] = 0) do={
-    /ip pool add name="lhg-service" ranges=192.168.99.100-192.168.99.199
-}
-:if ([:len [/ip dhcp-server find where name="lhg-service"]] = 0) do={
-    /ip dhcp-server add name="lhg-service" interface=ether1 \
-        address-pool="lhg-service" lease-time=10m disabled=no
-}
-:if ([:len [/ip dhcp-server network find where address="192.168.99.0/24"]] = 0) do={
-    /ip dhcp-server network add address=192.168.99.0/24 \
-        gateway=192.168.99.1 dns-server=192.168.99.1
-}
-
-# --- DNS server lokalny -------------------------------------------------------
-/ip dns set servers=1.1.1.1,8.8.8.8 allow-remote-requests=yes
-
-# --- WiFi (jeśli paczka aktywna) — wyłącz radio -------------------------------
+# --- Wyłącz wifi (LHG ma slot wifi, ale my go nie używamy) -------------------
 :do {
     :foreach i in=[/interface wifi find] do={
         /interface wifi set $i disabled=yes
@@ -96,7 +88,10 @@
     /interface list member add interface=ether1 list="mgmt"
 }
 
-# --- Firewall (minimalny — LHG nie robi NAT) ----------------------------------
+# --- Firewall (LHG nie routuje, zabezpieczamy tylko input) ------------------
+# W passthrough LHG SAM nie ma IP, więc input chain dotyczy tylko:
+# - ramek MAC-management na ether1 (MAC-Winbox/Neighbors)
+# - cellular (LTE backhaul) — tu nie ma własnego IP, więc input pusty
 # Reguły taggowane "solej-mgr:" dla idempotentnego rebuild
 /ip firewall filter remove [find where comment~"solej-mgr"]
 /ip firewall filter add chain=input action=accept connection-state=established,related \
@@ -110,14 +105,18 @@
 /ip firewall filter add chain=input action=drop comment="solej-mgr: drop everything else (LTE side)"
 
 # --- Wyłącz nieużywane usługi -------------------------------------------------
+# UWAGA: w passthrough LHG nie ma IP, więc winbox/ssh po IP są bez znaczenia.
+# Zostawiamy je włączone bez address-list — i tak są dostępne TYLKO przez
+# MAC-Winbox (mac-server allowed-interface-list=mgmt poniżej). Gdyby admin
+# tymczasowo nadał LHG IP w service-mode, IP-Winbox/SSH też zadziała.
 /ip service set telnet disabled=yes
 /ip service set ftp disabled=yes
 /ip service set www disabled=yes
 /ip service set api disabled=yes
 /ip service set api-ssl disabled=yes
 /ip service set www-ssl disabled=yes
-/ip service set winbox disabled=no address=192.168.99.0/24
-/ip service set ssh disabled=no address=192.168.99.0/24 port=22
+/ip service set winbox disabled=no
+/ip service set ssh disabled=no port=22
 
 # --- Hardening ----------------------------------------------------------------
 /tool mac-server set allowed-interface-list="mgmt"
@@ -140,5 +139,15 @@
     :log info "LHG-Solej: LED config - pomijam"
 }
 
-:log info "LHG-Solej: konfiguracja zakończona"
+# --- AKTYWACJA LTE PASSTHROUGH (na samym końcu, świadomie) ------------------
+# Cała reszta konfiguracji (firewall, hardening, mac-server, mgmt list) jest
+# już w miejscu. Teraz aktywujemy passthrough — od tego momentu LHG przekazuje
+# publiczne IP do MAC hAP i przestaje odpowiadać innym MAC-om przez ether1
+# poza ramkami MAC-management. MAC-Winbox z laptopa nadal działa, ale TYLKO
+# bezpośrednio (bez IP) i tylko jeśli laptop wpięty BEZPOŚREDNIO do LHG
+# (nie przez hAP).
+/interface lte set [find] apn-profiles="solej-apn"
+
+:log info "LHG-Solej: konfiguracja zakończona, passthrough aktywny"
 :put "OK. LHG: skieruj antenę na BTS, sprawdź sygnał: /interface lte monitor [find] once"
+:put "Dostęp do LHG: WYŁĄCZNIE MAC-Winbox po ether1 (nie przez hAP)"
