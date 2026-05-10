@@ -252,10 +252,16 @@
 /ip service set winbox disabled=no
 /ip service set ssh disabled=no port=22
 
-/tool mac-server set allowed-interface-list="MGMT"
-/tool mac-server mac-winbox set allowed-interface-list="MGMT"
+/tool mac-server set allowed-interface-list=all
+/tool mac-server mac-winbox set allowed-interface-list=all
 /tool mac-server ping set enabled=no
-/ip neighbor discovery-settings set discover-interface-list="MGMT"
+/ip neighbor discovery-settings set discover-interface-list=all
+# UWAGA: mac-server / discovery na 'all' bo cAP ma tylko 2 porty (ether1
+# trunk, ether2 access VLAN 20) i czasem laptop serwisowy wpina się
+# bezpośrednio do ether1 (untagged) — wtedy ramki MAC-management muszą
+# przejść. MAC-Winbox sam w sobie nie dystrybuuje IP-routingu, dostęp
+# do shell-a/winboxa wciąż wymaga uwierzytelnienia hasłem admina.
+# IP-Winbox/SSH są chronione firewall'em (in-interface-list=MGMT).
 /tool bandwidth-server set enabled=no
 /tool romon set enabled=no
 /ipv6 settings set disable-ipv6=yes
