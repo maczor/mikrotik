@@ -376,15 +376,34 @@
         configuration=cfg-guest-2g disabled=no \
         comment="Solej-Guest 2.4G (slave wifi2)"
 }
+
+# Master radia jako bridge port (datapath SAM auto-dodaje slaves, ale NIE
+# auto-dodaje master fizycznych w 7.20.8). Bez tego DHCP/ruch z klientów
+# Solej-priv nie wpada do bridge, mimo że radio nadaje i klienci asocjują.
+# UWAGA: frame-types=admit-all (NIE admit-only-untagged) — datapath taguje
+# ramki vlan-id=20 przed bridge, admit-only-untagged by je dropowało.
+:foreach iface in={"wifi1";"wifi2"} do={
+    :foreach bp in=[/interface bridge port find where interface=$iface] do={
+        /interface bridge port remove $bp
+    }
+}
+/interface bridge port add bridge=bridge interface=wifi1 pvid=20 frame-types=admit-all \
+    comment="solej-mgr: wifi1 master Solej-priv VLAN 20"
+/interface bridge port add bridge=bridge interface=wifi2 pvid=20 frame-types=admit-all \
+    comment="solej-mgr: wifi2 master Solej-priv VLAN 20"
+
 # Po zakupie kamer wifi: usuń `disabled=yes` z cfg-cams-2g (sekcja 19)
 # i dodaj slave:
 #   /interface wifi configuration set [find name=cfg-cams-2g] disabled=no
 #   /interface wifi add name=wifi2-cams master-interface=wifi2 \
 #       configuration=cfg-cams-2g disabled=no comment="Solej-Cams (slave wifi2)"
 
-# Włączenie wszystkich radii (master + slave)
+# Włączenie wszystkich radii (master + slave). UWAGA na 7.20.8: po świeżym
+# imporcie `set disabled=no` ustawia property, ale radio zostaje BOUND a nie
+# RUNNING — nie nadaje. Dopiero `enable` faktycznie podnosi radio. 5GHz po
+# enable wchodzi w DFS check (~1 minuta), 2.4GHz startuje natychmiast.
 :foreach w in=[/interface wifi find] do={
-    /interface wifi set $w disabled=no
+    /interface wifi enable $w
 }
 
 # === 23. Hotspot dla Solej-Guest (VLAN 40) =================================

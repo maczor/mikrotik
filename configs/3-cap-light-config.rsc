@@ -181,9 +181,25 @@
         comment="Solej-Guest 5G (slave wifi2)"
 }
 
-# Włączenie wszystkich radii
+# Master radia jako bridge port (datapath SAM auto-dodaje slaves, ale NIE
+# auto-dodaje master fizycznych w 7.20.8). Bez tego DHCP/ruch z klientów
+# Solej-priv nie wpada do bridge, mimo że radio nadaje i klienci asocjują.
+# Ramki z radia idą do bridge tagged VLAN 20, potem przez ether1 jako tagged
+# do hAP gdzie siedzi DHCP server priv. frame-types=admit-all (datapath taguje).
+:foreach iface in={"wifi1";"wifi2"} do={
+    :foreach bp in=[/interface bridge port find where interface=$iface] do={
+        /interface bridge port remove $bp
+    }
+}
+/interface bridge port add bridge=bridge interface=wifi1 pvid=20 frame-types=admit-all \
+    comment="solej-mgr: wifi1 master Solej-priv VLAN 20"
+/interface bridge port add bridge=bridge interface=wifi2 pvid=20 frame-types=admit-all \
+    comment="solej-mgr: wifi2 master Solej-priv VLAN 20"
+
+# Włączenie wszystkich radii. UWAGA 7.20.8: `set disabled=no` ustawia property,
+# ale radio zostaje BOUND a nie RUNNING. Dopiero `enable` faktycznie podnosi.
 :foreach w in=[/interface wifi find] do={
-    /interface wifi set $w disabled=no
+    /interface wifi enable $w
 }
 
 # === 12. Interface lists ===================================================
